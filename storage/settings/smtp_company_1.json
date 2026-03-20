@@ -1,0 +1,15 @@
+{
+    "host": "smtp.gmail.com",
+    "port": 587,
+    "auth_enabled": "1",
+    "username": "contact.reijin@gmail.com",
+    "password": "kdne klqi jaah wmta",
+    "encryption": "tls",
+    "from_email": "contact.reijin@gmail.com",
+    "from_name": "Pilora",
+    "vat_rate": 20,
+    "proof_required": "1",
+    "quote_email_subject": "Votre devis {{quote_number}}",
+    "quote_email_body": "Bonjour,\n\nVeuillez trouver votre devis en pièce jointe (PDF).\nVous pouvez aussi le consulter en ligne : {{quote_link}}\n\nCordialement,\n{{company_name}}",
+    "company_logo_path": "\/public\/storage\/uploads\/1\/brand\/logo_f992007075b44d86.webp"
+}

@@ -1,0 +1,22 @@
+{
+    "name": "pilora/pilora",
+    "type": "project",
+    "description": "Pilora - SaaS ERP multi-tenant pour le BTP en France",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.2",
+        "vlucas/phpdotenv": "^5.6",
+        "monolog/monolog": "^3.6",
+        "phpmailer/phpmailer": "^7.0",
+        "dompdf/dompdf": "^3.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "Core\\": "core/",
+            "App\\": "app/",
+            "Modules\\": "modules/"
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

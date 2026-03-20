@@ -1,0 +1,12 @@
+Options -Indexes
+
+RewriteEngine On
+
+# Si la ressource existe (fichier/dossier), on la sert telle quelle.
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Sinon, on route vers l’application.
+RewriteRule ^ index.php [L]
+
