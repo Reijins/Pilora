@@ -17,9 +17,9 @@ declare(strict_types=1);
     <link rel="stylesheet" href="<?= htmlspecialchars($cssHref, ENT_QUOTES, 'UTF-8') ?>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body>
+<body class="app-root">
 <?php if (!empty($impersonationBanner) && is_array($impersonationBanner)): ?>
     <div class="impersonation-banner" role="status">
         <span>Vous agissez pour l’entreprise <strong><?= htmlspecialchars((string) ($impersonationBanner['companyName'] ?? ''), ENT_QUOTES, 'UTF-8') ?></strong>.</span>

@@ -2,31 +2,31 @@
     {
         "id": 1,
         "name": "Starter",
-        "maxUsers": 3,
-        "price": 19.99
+        "maxUsers": 1,
+        "price": 29
     },
     {
         "id": 2,
         "name": "Pro",
-        "maxUsers": 10,
-        "price": 39.99
+        "maxUsers": 5,
+        "price": 59
     },
     {
         "id": 3,
-        "name": "Entreprise",
-        "maxUsers": 25,
-        "price": 50.99
-    },
-    {
-        "id": 4,
-        "name": "Entreprise +",
-        "maxUsers": 50,
-        "price": 99.99
+        "name": "Team",
+        "maxUsers": 15,
+        "price": 99
     },
     {
         "id": 5,
         "name": "Free",
         "maxUsers": 1,
         "price": 0
+    },
+    {
+        "id": 6,
+        "name": "Entreprise",
+        "maxUsers": 30,
+        "price": 149
     }
 ]

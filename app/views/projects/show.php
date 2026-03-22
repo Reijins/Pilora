@@ -11,6 +11,10 @@ if (str_contains($projectNotesRaw, '[STATUS:WAITING_PLANNING]')) {
     $projectStatusLabel = 'En attente de planification';
 } elseif (str_contains($projectNotesRaw, '[STATUS:PLANNED]')) {
     $projectStatusLabel = 'Planifié';
+} elseif (str_contains($projectNotesRaw, '[STATUS:CANCELLED]')) {
+    $projectStatusLabel = 'Annulé';
+} elseif (str_contains($projectNotesRaw, '[STATUS:REFUSED_CLIENT]')) {
+    $projectStatusLabel = 'Refus client';
 } elseif ($projectStatusCode === 'planned') {
     $projectStatusLabel = 'Prévu';
 } elseif ($projectStatusCode === 'in_progress') {
@@ -19,6 +23,25 @@ if (str_contains($projectNotesRaw, '[STATUS:WAITING_PLANNING]')) {
     $projectStatusLabel = 'En pause';
 } elseif ($projectStatusCode === 'completed') {
     $projectStatusLabel = 'Terminé';
+}
+
+$projectChipClass = 'chip chip-affaire chip-affaire--neutral';
+if (str_contains($projectNotesRaw, '[STATUS:WAITING_PLANNING]')) {
+    $projectChipClass = 'chip chip-affaire chip-affaire--waiting';
+} elseif (str_contains($projectNotesRaw, '[STATUS:PLANNED]')) {
+    $projectChipClass = 'chip chip-affaire chip-affaire--confirmed';
+} elseif (str_contains($projectNotesRaw, '[STATUS:CANCELLED]')) {
+    $projectChipClass = 'chip chip-affaire chip-affaire--cancelled';
+} elseif (str_contains($projectNotesRaw, '[STATUS:REFUSED_CLIENT]')) {
+    $projectChipClass = 'chip chip-affaire chip-affaire--refused-client';
+} elseif ($projectStatusCode === 'planned') {
+    $projectChipClass = 'chip chip-affaire chip-affaire--preve';
+} elseif ($projectStatusCode === 'in_progress') {
+    $projectChipClass = 'chip chip-affaire chip-affaire--progress';
+} elseif ($projectStatusCode === 'paused') {
+    $projectChipClass = 'chip chip-affaire chip-affaire--paused';
+} elseif ($projectStatusCode === 'completed') {
+    $projectChipClass = 'chip chip-affaire chip-affaire--completed';
 }
 ?>
 <section class="page">
@@ -30,7 +53,7 @@ if (str_contains($projectNotesRaw, '[STATUS:WAITING_PLANNING]')) {
                     <h2 class="sheet-title"><?= htmlspecialchars((string) ($project['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></h2>
                     <div class="sheet-meta">
                         <span>Client : <strong><?= htmlspecialchars((string) ($project['clientName'] ?? '—'), ENT_QUOTES, 'UTF-8') ?></strong></span>
-                        <span class="chip chip-primary"><?= htmlspecialchars($projectStatusLabel, ENT_QUOTES, 'UTF-8') ?></span>
+                        <span class="<?= htmlspecialchars($projectChipClass, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($projectStatusLabel, ENT_QUOTES, 'UTF-8') ?></span>
                     </div>
                 </div>
                 <div style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -155,9 +178,10 @@ if (str_contains($projectNotesRaw, '[STATUS:WAITING_PLANNING]')) {
                                                         elseif ($quoteStatusCode === 'envoye') $quoteStatusClass = 'status-pill status-pill-sent';
                                                         elseif ($quoteStatusCode === 'accepte') $quoteStatusClass = 'status-pill status-pill-accepted';
                                                         elseif ($quoteStatusCode === 'refuse') $quoteStatusClass = 'status-pill status-pill-refused';
+                                                        elseif ($quoteStatusCode === 'annule') $quoteStatusClass = 'status-pill status-pill-refused';
                                                     ?>
                                                     <?php
-                                                        $statusLabelMap = ['brouillon' => 'Brouillon', 'envoye' => 'Envoyé', 'accepte' => 'Accepté', 'refuse' => 'Refusé'];
+                                                        $statusLabelMap = ['brouillon' => 'Brouillon', 'envoye' => 'Envoyé', 'accepte' => 'Accepté', 'refuse' => 'Refusé', 'annule' => 'Annulé', 'a_relancer' => 'À relancer'];
                                                         $statusLabel = $statusLabelMap[$quoteStatusCode] ?? ($quoteStatusCode !== '' ? $quoteStatusCode : '—');
                                                     ?>
                                                     <span class="<?= htmlspecialchars($quoteStatusClass, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8') ?></span>

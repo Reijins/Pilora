@@ -77,13 +77,32 @@ use Core\Support\DateFormatter;
                     $getAffaireStatusClass = static function (array $af): string {
                         $statusCode = (string) ($af['projectStatus'] ?? '');
                         $notesRaw = (string) ($af['projectNotes'] ?? '');
-                        if (str_contains($notesRaw, '[STATUS:CANCELLED]') || str_contains($notesRaw, '[STATUS:REFUSED_CLIENT]')) {
-                            return 'status-pill status-pill-refused';
+                        if (str_contains($notesRaw, '[STATUS:CANCELLED]')) {
+                            return 'chip chip-affaire chip-affaire--cancelled';
                         }
-                        if (str_contains($notesRaw, '[STATUS:WAITING_PLANNING]')) return 'status-pill status-pill-sent';
-                        if (str_contains($notesRaw, '[STATUS:PLANNED]') || $statusCode === 'planned') return 'status-pill status-pill-draft';
-                        if ($statusCode === 'in_progress' || $statusCode === 'completed') return 'status-pill status-pill-accepted';
-                        return 'status-pill status-pill-neutral';
+                        if (str_contains($notesRaw, '[STATUS:REFUSED_CLIENT]')) {
+                            return 'chip chip-affaire chip-affaire--refused-client';
+                        }
+                        if (str_contains($notesRaw, '[STATUS:WAITING_PLANNING]')) {
+                            return 'chip chip-affaire chip-affaire--waiting';
+                        }
+                        if (str_contains($notesRaw, '[STATUS:PLANNED]')) {
+                            return 'chip chip-affaire chip-affaire--confirmed';
+                        }
+                        if ($statusCode === 'planned') {
+                            return 'chip chip-affaire chip-affaire--preve';
+                        }
+                        if ($statusCode === 'in_progress') {
+                            return 'chip chip-affaire chip-affaire--progress';
+                        }
+                        if ($statusCode === 'completed') {
+                            return 'chip chip-affaire chip-affaire--completed';
+                        }
+                        if ($statusCode === 'paused') {
+                            return 'chip chip-affaire chip-affaire--paused';
+                        }
+
+                        return 'chip chip-affaire chip-affaire--neutral';
                     };
                     $isHistoricalAffaire = static function (array $af): bool {
                         $statusCode = (string) ($af['projectStatus'] ?? '');

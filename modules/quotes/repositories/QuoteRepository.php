@@ -601,5 +601,34 @@ final class QuoteRepository
         $stmt = $pdo->prepare($sql);
         $stmt->execute(array_merge([$companyId], $quoteIds));
     }
+
+    /**
+     * Marque les devis comme annulés (affaire annulée par l’entreprise), distinct du refus client.
+     *
+     * @param array<int, int> $quoteIds
+     */
+    public function annulerQuotesByIds(int $companyId, array $quoteIds): void
+    {
+        $quoteIds = array_values(array_unique(array_filter(
+            array_map(static fn ($v): int => (int) $v, $quoteIds),
+            static fn (int $id): bool => $id > 0
+        )));
+        if ($quoteIds === []) {
+            return;
+        }
+
+        $pdo = Connection::pdo();
+        $placeholders = implode(',', array_fill(0, count($quoteIds), '?'));
+        $sql = "
+            UPDATE Quote
+            SET status = 'annule',
+                updatedAt = NOW()
+            WHERE companyId = ?
+              AND id IN ($placeholders)
+              AND status <> 'annule'
+        ";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(array_merge([$companyId], $quoteIds));
+    }
 }
 

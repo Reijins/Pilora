@@ -79,6 +79,10 @@ $isAffaireActiveForCancel = static function (array $p): bool {
                                             $statusLabel = 'En attente de planification';
                                         } elseif (str_contains($notesRaw, '[STATUS:PLANNED]')) {
                                             $statusLabel = 'Planifié';
+                                        } elseif (str_contains($notesRaw, '[STATUS:CANCELLED]')) {
+                                            $statusLabel = 'Annulé';
+                                        } elseif (str_contains($notesRaw, '[STATUS:REFUSED_CLIENT]')) {
+                                            $statusLabel = 'Refus client';
                                         } elseif ($statusCode === 'planned') {
                                             $statusLabel = 'Prévu';
                                         } elseif ($statusCode === 'in_progress') {
@@ -88,12 +92,30 @@ $isAffaireActiveForCancel = static function (array $p): bool {
                                         } elseif ($statusCode === 'completed') {
                                             $statusLabel = 'Terminé';
                                         }
+                                        $statusChipClass = 'chip chip-affaire chip-affaire--neutral';
+                                        if (str_contains($notesRaw, '[STATUS:WAITING_PLANNING]')) {
+                                            $statusChipClass = 'chip chip-affaire chip-affaire--waiting';
+                                        } elseif (str_contains($notesRaw, '[STATUS:PLANNED]')) {
+                                            $statusChipClass = 'chip chip-affaire chip-affaire--confirmed';
+                                        } elseif (str_contains($notesRaw, '[STATUS:CANCELLED]')) {
+                                            $statusChipClass = 'chip chip-affaire chip-affaire--cancelled';
+                                        } elseif (str_contains($notesRaw, '[STATUS:REFUSED_CLIENT]')) {
+                                            $statusChipClass = 'chip chip-affaire chip-affaire--refused-client';
+                                        } elseif ($statusCode === 'planned') {
+                                            $statusChipClass = 'chip chip-affaire chip-affaire--preve';
+                                        } elseif ($statusCode === 'in_progress') {
+                                            $statusChipClass = 'chip chip-affaire chip-affaire--progress';
+                                        } elseif ($statusCode === 'paused') {
+                                            $statusChipClass = 'chip chip-affaire chip-affaire--paused';
+                                        } elseif ($statusCode === 'completed') {
+                                            $statusChipClass = 'chip chip-affaire chip-affaire--completed';
+                                        }
                                         $showCancelBtn = !empty($canUpdateProject) && $isAffaireActiveForCancel($p);
                                     ?>
                                     <tr>
                                         <td><?= htmlspecialchars((string) ($p['name'] ?? '—'), ENT_QUOTES, 'UTF-8') ?></td>
                                         <td><?= htmlspecialchars((string) ($p['clientName'] ?? '—'), ENT_QUOTES, 'UTF-8') ?></td>
-                                        <td><span class="badge"><?= htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8') ?></span></td>
+                                        <td><span class="<?= htmlspecialchars($statusChipClass, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8') ?></span></td>
                                         <td><?= htmlspecialchars(DateFormatter::frDate(isset($p['plannedStartDate']) ? (string) $p['plannedStartDate'] : null), ENT_QUOTES, 'UTF-8') ?></td>
                                         <td><?= htmlspecialchars(DateFormatter::frDate(isset($p['plannedEndDate']) ? (string) $p['plannedEndDate'] : null), ENT_QUOTES, 'UTF-8') ?></td>
                                         <td>

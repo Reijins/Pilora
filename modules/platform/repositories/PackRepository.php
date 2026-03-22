@@ -22,6 +22,20 @@ final class PackRepository
         return is_array($decoded) ? array_values($decoded) : [];
     }
 
+    public function findById(int $id): ?array
+    {
+        if ($id <= 0) {
+            return null;
+        }
+        foreach ($this->listAll() as $p) {
+            if ((int) ($p['id'] ?? 0) === $id) {
+                return $p;
+            }
+        }
+
+        return null;
+    }
+
     public function upsert(array $pack): void
     {
         $packs = $this->listAll();

@@ -380,6 +380,10 @@ final class Bootstrap
             return (new PlatformController())->packsNew($request, $userContext);
         });
 
+        $router->get('/platform/packs/edit', function (Request $request, UserContext $userContext): Response {
+            return (new PlatformController())->packsEdit($request, $userContext);
+        });
+
         $router->post('/platform/packs/delete', function (Request $request, UserContext $userContext): Response {
             return (new PlatformController())->packsDelete($request, $userContext);
         });

@@ -201,7 +201,7 @@ CREATE TABLE IF NOT EXISTS Quote (
   projectId BIGINT UNSIGNED NULL,
   quoteNumber VARCHAR(50) NULL,
   title VARCHAR(255) NULL,
-  status ENUM('brouillon','envoye','a_relancer','accepte','refuse') NOT NULL DEFAULT 'brouillon',
+  status ENUM('brouillon','envoye','a_relancer','accepte','refuse','annule') NOT NULL DEFAULT 'brouillon',
   followUpAt DATETIME NULL,
   createdByUserId BIGINT UNSIGNED NULL,
   sentAt DATETIME NULL,

@@ -425,7 +425,11 @@ final class PlatformController extends BaseController
         $maxUsers = max(0, (int) $request->getBodyParam('max_users', 0));
         $price = max(0.0, (float) $request->getBodyParam('price', 0));
         if ($name === '') {
-            return Response::redirect('platform/packs/new?err=Nom%20du%20pack%20requis');
+            if ($id > 0) {
+                return Response::redirect('platform/packs/edit?id=' . $id . '&err=' . rawurlencode('Nom du pack requis'));
+            }
+
+            return Response::redirect('platform/packs/new?err=' . rawurlencode('Nom du pack requis'));
         }
 
         try {
@@ -437,7 +441,11 @@ final class PlatformController extends BaseController
             ]);
             $this->audit((int) $userContext->homeCompanyId(), (int) $userContext->userId, 'platform.pack.upsert', null, ['name' => $name]);
         } catch (\Throwable) {
-            return Response::redirect('platform/packs/new?err=Impossible%20d%27enregistrer%20le%20pack');
+            if ($id > 0) {
+                return Response::redirect('platform/packs/edit?id=' . $id . '&err=' . rawurlencode('Impossible d\'enregistrer le pack'));
+            }
+
+            return Response::redirect('platform/packs/new?err=' . rawurlencode('Impossible d\'enregistrer le pack'));
         }
         return Response::redirect('platform/companies?tab=packs&msg=Pack%20enregistre');
     }
@@ -455,6 +463,31 @@ final class PlatformController extends BaseController
             'pageTitle' => 'Nouveau pack',
             'csrfToken' => Csrf::token(),
             'error' => $error,
+            'pack' => null,
+        ]);
+    }
+
+    public function packsEdit(Request $request, UserContext $userContext): Response
+    {
+        if (!$this->assertPlatform($userContext) || !$this->can($userContext, 'platform.billing.manage')) {
+            return Response::redirect('dashboard');
+        }
+
+        $packIdRaw = $request->getQueryParam('id', null);
+        $packId = is_numeric($packIdRaw) ? (int) $packIdRaw : 0;
+        $pack = (new PackRepository())->findById($packId);
+        if ($pack === null) {
+            return Response::redirect('platform/companies?tab=packs&err=' . rawurlencode('Pack introuvable'));
+        }
+
+        $err = $request->getQueryParam('err', null);
+        $error = is_string($err) && $err !== '' ? $err : null;
+
+        return $this->renderPage('platform/pack_new.php', [
+            'pageTitle' => 'Modifier le pack',
+            'csrfToken' => Csrf::token(),
+            'error' => $error,
+            'pack' => $pack,
         ]);
     }
 

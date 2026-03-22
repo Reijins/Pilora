@@ -88,7 +88,9 @@ final class ProjectRepository
         ';
 
         if ($tab === 'active') {
-            $sql .= ' AND p.status IN ("in_progress", "paused")';
+            $sql .= ' AND p.status IN ("in_progress", "paused")
+              AND (p.notes IS NULL OR p.notes NOT LIKE :cancelMarker)
+              AND (p.notes IS NULL OR p.notes NOT LIKE :refusedMarker)';
         } elseif ($tab === 'planned') {
             $sql .= ' AND p.status = "planned"
               AND (p.notes IS NULL OR p.notes NOT LIKE :waitingMarker)';
@@ -105,6 +107,10 @@ final class ProjectRepository
         $stmt->bindValue('limit', $limit, PDO::PARAM_INT);
         if ($tab === 'planned' || $tab === 'waiting') {
             $stmt->bindValue('waitingMarker', '%[STATUS:WAITING_PLANNING]%', PDO::PARAM_STR);
+        }
+        if ($tab === 'active') {
+            $stmt->bindValue('cancelMarker', '%[STATUS:CANCELLED]%', PDO::PARAM_STR);
+            $stmt->bindValue('refusedMarker', '%[STATUS:REFUSED_CLIENT]%', PDO::PARAM_STR);
         }
 
         $stmt->execute();
@@ -261,7 +267,7 @@ final class ProjectRepository
         $pdo = Connection::pdo();
 
         $stmtLoad = $pdo->prepare('
-            SELECT id, clientId, name
+            SELECT id, clientId, name, notes
             FROM Project
             WHERE companyId = :companyId
               AND id = :projectId
@@ -276,16 +282,23 @@ final class ProjectRepository
             return false;
         }
 
-        $reason = $reason !== null ? trim($reason) : null;
-        $reason = ($reason !== '') ? $reason : null;
+        $reasonInput = $reason !== null ? trim($reason) : '';
+        $reasonInput = $reasonInput !== '' ? $reasonInput : null;
 
         // Compatibilité avec l'enum actuel de Project.status:
         // on persiste cancelled/refused_client via status=paused + marqueur en notes.
         $dbStatus = $status;
+        $notesValue = $reasonInput; /* utilisé si jamais d'autres statuts passent par cette méthode */
         if ($status === 'cancelled' || $status === 'refused_client') {
             $dbStatus = 'paused';
             $prefix = $status === 'cancelled' ? '[STATUS:CANCELLED]' : '[STATUS:REFUSED_CLIENT]';
-            $reason = $prefix . ' ' . ($reason ?? '');
+            $line = $prefix . ($reasonInput !== null && $reasonInput !== '' ? ' ' . $reasonInput : '');
+            $existingNotes = trim((string) ($projectRow['notes'] ?? ''));
+            if ($existingNotes !== '') {
+                $notesValue = $line !== '' ? ($line . "\n\n" . $existingNotes) : $existingNotes;
+            } else {
+                $notesValue = $line;
+            }
         }
 
         $pdo->beginTransaction();
@@ -302,7 +315,7 @@ final class ProjectRepository
 
             $stmt->execute([
                 'status' => $dbStatus,
-                'notes' => $reason,
+                'notes' => $notesValue,
                 'companyId' => $companyId,
                 'projectId' => $projectId,
             ]);
@@ -318,7 +331,11 @@ final class ProjectRepository
                     (string) ($projectRow['name'] ?? '')
                 );
                 if ($quoteIds !== []) {
-                    $quoteRepo->refuseQuotesByIds($companyId, $quoteIds);
+                    if ($status === 'cancelled') {
+                        $quoteRepo->annulerQuotesByIds($companyId, $quoteIds);
+                    } else {
+                        $quoteRepo->refuseQuotesByIds($companyId, $quoteIds);
+                    }
                     (new InvoiceRepository())->cancelInvoicesByQuoteIds($companyId, $quoteIds);
                 }
             }

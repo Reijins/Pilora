@@ -99,24 +99,30 @@ $currentUserId = (int) ($currentUserId ?? 0);
                 </form>
             <?php elseif ($tab === 'packs' && $canBilling): ?>
                 <p class="muted" style="margin-bottom:12px;">Définissez vos offres (prix, cycle et date de prochain renouvellement). Un script cron peut ensuite déclencher l’envoi auto des factures.</p>
-                <div style="margin-bottom:16px;">
+                <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom:16px; align-items:center;">
                     <a class="btn btn-primary" href="<?= htmlspecialchars($basePath . '/platform/packs/new', ENT_QUOTES, 'UTF-8') ?>">Nouveau pack</a>
                 </div>
                 <div class="table-wrap">
                     <table class="table">
-                        <thead><tr><th>Nom</th><th>Utilisateurs</th><th>Prix</th><th></th></tr></thead>
+                        <thead><tr><th>Nom</th><th>Utilisateurs</th><th>Prix</th><th>Actions</th></tr></thead>
                         <tbody>
                         <?php if ($packs !== []): foreach ($packs as $p): ?>
+                            <?php $packRowId = (int) ($p['id'] ?? 0); ?>
                             <tr>
                                 <td><?= htmlspecialchars((string) ($p['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                                 <td><?= (int) ($p['maxUsers'] ?? 0) ?></td>
                                 <td><?= htmlspecialchars((string) ($p['price'] ?? '0'), ENT_QUOTES, 'UTF-8') ?> €</td>
                                 <td>
-                                    <form method="post" action="<?= htmlspecialchars($basePath . '/platform/packs/delete', ENT_QUOTES, 'UTF-8') ?>">
-                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) ($csrfToken ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                                        <input type="hidden" name="id" value="<?= (int) ($p['id'] ?? 0) ?>">
-                                        <button class="btn btn-danger btn-sm" type="submit">Supprimer</button>
-                                    </form>
+                                    <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                                        <?php if ($packRowId > 0): ?>
+                                            <a class="btn btn-secondary btn-sm" href="<?= htmlspecialchars($basePath . '/platform/packs/edit?id=' . $packRowId, ENT_QUOTES, 'UTF-8') ?>">Modifier</a>
+                                        <?php endif; ?>
+                                        <form method="post" action="<?= htmlspecialchars($basePath . '/platform/packs/delete', ENT_QUOTES, 'UTF-8') ?>" style="display:inline;">
+                                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) ($csrfToken ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                            <input type="hidden" name="id" value="<?= $packRowId ?>">
+                                            <button class="btn btn-danger btn-sm" type="submit">Supprimer</button>
+                                        </form>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; else: ?>
