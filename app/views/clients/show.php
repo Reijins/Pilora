@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 use Core\Support\DateFormatter;
-// Variables: $permissionDenied, $client, $projects, $affaires, $contacts, $quotes, $invoices, $canViewProjects, $canAssignTeam, $canReportRead, $canPhotoRead, $canViewQuotes, $canViewInvoices, $canCreateInvoice, $canMarkPaid, $canCreateQuote, $canCreateProject, $canUpdateProject, $canCreateContact, $csrfToken, $flashMessage, $flashError
+// Variables: $permissionDenied, $client, $projects, $affaires, $contacts, $quotes, $invoices, $canViewProjects, $canReportRead, $canPhotoRead, $canViewQuotes, $canViewInvoices, $canCreateInvoice, $canMarkPaid, $canCreateQuote, $canCreateProject, $canUpdateProject, $canCreateContact, $csrfToken, $flashMessage, $flashError
 ?>
 <section class="page">
     <?php $basePath = isset($basePath) && is_string($basePath) ? $basePath : ''; ?>
@@ -44,6 +44,7 @@ use Core\Support\DateFormatter;
                         'partiellement_payee' => 'Partiellement payée',
                         'payee' => 'Payée',
                         'echue' => 'Échue',
+                        'annulee' => 'Annulée',
                     ];
                     $affaireStatusLabels = [
                         'planned' => 'Prévu',
@@ -310,8 +311,9 @@ use Core\Support\DateFormatter;
                                                 <td>
                                                     <?php
                                                         $remaining = (float) ($inv['amountRemaining'] ?? 0);
+                                                        $invSt = (string) ($inv['status'] ?? '');
                                                     ?>
-                                                    <?php if (!empty($canMarkPaid) && $remaining > 0.0): ?>
+                                                    <?php if (!empty($canMarkPaid) && $remaining > 0.0 && $invSt !== 'annulee'): ?>
                                                         <a class="link-action" href="<?= htmlspecialchars($basePath . '/payments/new?invoiceId=' . (int) ($inv['id'] ?? 0), ENT_QUOTES, 'UTF-8') ?>">Payer</a>
                                                     <?php endif; ?>
                                                 </td>

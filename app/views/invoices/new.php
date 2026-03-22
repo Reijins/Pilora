@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-// Variables: $permissionDenied, $csrfToken, $quoteId, $quoteTitle, $quoteNumber, $clientId, $amountTotal, $dueDateYmd
+// Variables: $permissionDenied, $csrfToken, $quoteId, $quoteTitle, $quoteNumber, $clientId, $invoiceTotals, $dueDateYmd
 ?>
 <section class="page">
     <div class="card">
@@ -37,8 +37,12 @@ declare(strict_types=1);
                     <label class="label" for="due_date">Date d’échéance</label>
                     <input class="input" id="due_date" name="due_date" type="date" value="<?= htmlspecialchars((string) ($dueDateYmd ?? ''), ENT_QUOTES, 'UTF-8') ?>" required>
 
-                    <label class="label" for="amount_total">Montant total</label>
-                    <input class="input" id="amount_total" name="amount_total" type="text" value="<?= htmlspecialchars(number_format((float) ($amountTotal ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €" disabled>
+                    <label class="label">Montants (depuis le devis)</label>
+                    <div class="kv-grid" style="margin-bottom:10px;">
+                        <div class="kv"><div class="kv-label">Total HT</div><div class="kv-value"><?= htmlspecialchars(number_format((float) ($invoiceTotals['ht'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</div></div>
+                        <div class="kv"><div class="kv-label">TVA (<?= htmlspecialchars((string) ($invoiceTotals['vat_rate'] ?? 20), ENT_QUOTES, 'UTF-8') ?> %)</div><div class="kv-value"><?= htmlspecialchars(number_format((float) ($invoiceTotals['vat_amount'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</div></div>
+                        <div class="kv"><div class="kv-label">Total TTC (facturé)</div><div class="kv-value"><strong><?= htmlspecialchars(number_format((float) ($invoiceTotals['ttc'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</strong></div></div>
+                    </div>
 
                     <label class="label" for="notes">Notes (optionnel)</label>
                     <input class="input" id="notes" name="notes" type="text">

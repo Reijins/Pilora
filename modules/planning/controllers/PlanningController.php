@@ -37,7 +37,7 @@ final class PlanningController extends BaseController
         $repoProjects = new ProjectRepository();
         $scheduledProjects = [];
         try {
-            $scheduledProjects = $repoProjects->listScheduledWithTeamsForRange(
+            $scheduledProjects = $repoProjects->listScheduledForRange(
                 companyId: $userContext->companyId,
                 rangeStartYmd: $rangeStart->format('Y-m-d'),
                 rangeEndYmd: $rangeEnd->format('Y-m-d')

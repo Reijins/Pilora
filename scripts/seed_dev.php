@@ -33,7 +33,7 @@ $roles = [
             // Factures
             'invoice.read','invoice.create','invoice.update','invoice.mark_paid','invoice.export',
             // Projets/Chantiers
-            'project.read','project.create','project.update','project.assign_team',
+            'project.read','project.create','project.update',
             // RH
             'hr.leave.request','hr.leave.approve',
             // Dashboard
@@ -69,7 +69,7 @@ $roles = [
     ],
     'Chef d’équipe' => [
         'permissions' => [
-            'project.read','project.update','project.assign_team',
+            'project.read','project.update',
             'dashboard.projects.read',
         ],
     ],
@@ -101,7 +101,6 @@ $permissionDescriptions = [
     'project.read' => 'Lire les chantiers',
     'project.create' => 'Créer des chantiers',
     'project.update' => 'Mettre à jour les chantiers',
-    'project.assign_team' => 'Assigner une équipe aux chantiers',
     // RH
     'hr.leave.request' => 'Demander un congé',
     'hr.leave.approve' => 'Approuver un congé',

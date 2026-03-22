@@ -11,62 +11,97 @@ use Core\Security\Csrf;
 use Core\View\View;
 use Modules\Clients\Repositories\ClientListRepository;
 use Modules\Clients\Repositories\ClientRepository;
+use Modules\Companies\Repositories\CompanyRepository;
 use Modules\Contacts\Repositories\ContactRepository;
 use Modules\Invoices\Repositories\InvoiceRepository;
 use Modules\Planning\Repositories\PlanningRepository;
 use Modules\PriceLibrary\Repositories\PriceLibraryRepository;
+use Modules\Settings\Repositories\SmtpSettingsRepository;
 use Modules\Projects\Repositories\ProjectPhotoRepository;
 use Modules\Projects\Repositories\ProjectRepository;
 use Modules\Projects\Repositories\ProjectReportRepository;
-use Modules\Projects\Repositories\ProjectAssignmentRepository;
+use Modules\Invoices\Services\InvoiceAmountsService;
 use Modules\Quotes\Repositories\QuoteRepository;
 use Modules\Quotes\Repositories\QuoteSignatureRepository;
 use Modules\Quotes\Repositories\QuoteShareRepository;
 use Modules\Quotes\Services\QuoteDeliveryService;
-use Modules\Settings\Repositories\SmtpSettingsRepository;
-use Modules\Users\Repositories\UserListRepository;
-
 final class ProjectsController extends BaseController
 {
+    /** Saisie heures (formulaire affaire) → minutes stockées. */
+    private static function estimatedMinutesFromHoursInput(mixed $raw): ?int
+    {
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+        if (is_string($raw)) {
+            $raw = str_replace(',', '.', trim($raw));
+        }
+        if (!is_numeric($raw)) {
+            return null;
+        }
+        $hours = (float) $raw;
+        if ($hours < 0) {
+            return null;
+        }
+
+        return (int) round($hours * 60);
+    }
+
     public function index(Request $request, UserContext $userContext): Response
     {
         if ($userContext->userId === null || $userContext->companyId === null) {
             return Response::redirect('login');
         }
 
-        $canRead = in_array('planning.read', $userContext->permissions, true);
-        if (!$canRead) {
-            return $this->renderPage('projects/index.php', [
-                'pageTitle' => 'Planning chantiers',
+        if (!in_array('project.read', $userContext->permissions, true)) {
+            return $this->renderPage('projects/affaires.php', [
+                'pageTitle' => 'Affaires',
                 'permissionDenied' => true,
+                'projects' => [],
+                'currentTab' => 'all',
+                'tabs' => [
+                    'all' => 'Toutes',
+                    'active' => 'En cours',
+                    'planned' => 'Planifiées',
+                    'waiting' => 'En attente planif.',
+                    'done' => 'Terminées',
+                ],
+                'canUpdateProject' => false,
+                'csrfToken' => Csrf::token(),
+                'flashMessage' => null,
+                'flashError' => null,
             ]);
         }
 
-        $rangeStart = new \DateTimeImmutable('today 00:00:00');
-        $rangeEnd = $rangeStart->modify('+30 days')->setTime(23, 59, 59);
+        $tabRaw = $request->getQueryParam('tab', 'all');
+        $tab = is_string($tabRaw) ? trim($tabRaw) : 'all';
 
-        $planningEntries = [];
+        $tabs = [
+            'all' => 'Toutes',
+            'active' => 'En cours',
+            'planned' => 'Planifiées',
+            'waiting' => 'En attente planif.',
+            'done' => 'Terminées',
+        ];
+
+        $projects = [];
         try {
-            $planningEntries = (new PlanningRepository())->listByCompanyAndRange(
-                companyId: $userContext->companyId,
-                projectId: null,
-                userId: null,
-                rangeStart: $rangeStart,
-                rangeEnd: $rangeEnd
-            );
+            $projects = (new ProjectRepository())->listByCompanyIdWithTab($userContext->companyId, $tab, 400);
         } catch (\Throwable) {
-            $planningEntries = [];
+            $projects = [];
         }
 
-        $canCreateProject = in_array('project.create', $userContext->permissions, true);
-
-        return $this->renderPage('projects/index.php', [
-            'pageTitle' => 'Planning chantiers',
+        return $this->renderPage('projects/affaires.php', [
+            'pageTitle' => 'Affaires',
             'permissionDenied' => false,
-            'planningEntries' => $planningEntries,
-            'rangeStart' => $rangeStart->format('Y-m-d'),
-            'rangeEnd' => $rangeEnd->format('Y-m-d'),
-            'canCreateProject' => $canCreateProject,
+            'projects' => $projects,
+            'currentTab' => $tab,
+            'tabs' => $tabs,
+            'canCreateProject' => in_array('project.create', $userContext->permissions, true),
+            'canUpdateProject' => in_array('project.update', $userContext->permissions, true),
+            'csrfToken' => Csrf::token(),
+            'flashMessage' => $request->getQueryParam('msg', null),
+            'flashError' => $request->getQueryParam('err', null),
         ]);
     }
 
@@ -107,6 +142,9 @@ final class ProjectsController extends BaseController
             $contacts = [];
         }
 
+        $smtp = (new SmtpSettingsRepository())->getByCompanyId($userContext->companyId);
+        $quoteVatRate = is_numeric($smtp['vat_rate'] ?? null) ? (float) $smtp['vat_rate'] : 20.0;
+
         return $this->renderPage('projects/new.php', [
             'pageTitle' => 'Nouvelle affaire',
             'permissionDenied' => false,
@@ -116,6 +154,7 @@ final class ProjectsController extends BaseController
             'canCreateQuote' => in_array('quote.create', $userContext->permissions, true),
             'priceItems' => $priceItems,
             'contacts' => $contacts,
+            'quoteVatRate' => $quoteVatRate,
             'flashMessage' => $request->getQueryParam('msg', null),
             'flashError' => $request->getQueryParam('err', null),
         ]);
@@ -187,7 +226,8 @@ final class ProjectsController extends BaseController
         $devisCreated = false;
         $devisCreationFailed = false;
         $createdQuoteId = 0;
-        $sendQuoteEmail = (string) $request->getBodyParam('send_quote_email', '1') === '1';
+        // Case décochée = param absent : ne pas défaut à « envoyer ».
+        $sendQuoteEmail = (string) $request->getBodyParam('send_quote_email', '') === '1';
         $canCreateQuote = in_array('quote.create', $userContext->permissions, true);
         if ($canCreateQuote) {
             $title = $quoteTitle !== '' ? $quoteTitle : ('Devis - ' . $name);
@@ -218,7 +258,7 @@ final class ProjectsController extends BaseController
             $priceItemIdsRaw = $request->getBodyParam('item_price_item_id', []);
             $quantitiesRaw = $request->getBodyParam('item_quantity', []);
             $unitPricesRaw = $request->getBodyParam('item_unit_price', []);
-            $estimatedTimesRaw = $request->getBodyParam('item_estimated_time_minutes', []);
+            $estimatedTimesRaw = $request->getBodyParam('item_estimated_time_hours', []);
             $saveToLibraryRaw = $request->getBodyParam('item_save_to_library', []);
 
             $itemNames = is_array($itemNamesRaw) ? $itemNamesRaw : [];
@@ -250,7 +290,7 @@ final class ProjectsController extends BaseController
                 $nameItem = trim((string) ($itemNames[$i] ?? ''));
                 $quantity = is_numeric($quantities[$i] ?? null) ? (float) $quantities[$i] : 1.0;
                 $unitPrice = is_numeric($unitPrices[$i] ?? null) ? (float) $unitPrices[$i] : 0.0;
-                $estimatedTime = is_numeric($estimatedTimes[$i] ?? null) ? (int) $estimatedTimes[$i] : null;
+                $estimatedTime = self::estimatedMinutesFromHoursInput($estimatedTimes[$i] ?? null);
 
                 $description = $nameItem;
                 if ($priceItemId === null && $nameItem !== '') {
@@ -263,10 +303,8 @@ final class ProjectsController extends BaseController
 
                 if ($priceItemId !== null && isset($priceItemMap[$priceItemId])) {
                     $pi = $priceItemMap[$priceItemId];
-                    if ($unitPrice <= 0) {
-                        $unitPrice = is_numeric($pi['unitPrice'] ?? null) ? (float) $pi['unitPrice'] : $unitPrice;
-                    }
-                    if ($estimatedTime === null && is_numeric($pi['estimatedTimeMinutes'] ?? null)) {
+                    $unitPrice = is_numeric($pi['unitPrice'] ?? null) ? (float) $pi['unitPrice'] : $unitPrice;
+                    if (is_numeric($pi['estimatedTimeMinutes'] ?? null)) {
                         $estimatedTime = (int) $pi['estimatedTimeMinutes'];
                     }
                     if ($nameItem === '') {
@@ -350,96 +388,16 @@ final class ProjectsController extends BaseController
             return Response::redirect('projects/show?projectId=' . $projectId . '&err=Affaire%20cr%C3%A9%C3%A9e%2C%20mais%20le%20devis%20n%27a%20pas%20pu%20%C3%AAtre%20cr%C3%A9%C3%A9');
         }
         $msg = $devisCreated ? 'Affaire%20et%20devis%20cr%C3%A9%C3%A9s' : 'Affaire%20cr%C3%A9%C3%A9e';
-        if ($devisCreated && $sendQuoteEmail) {
-            $msg = 'Affaire%20et%20devis%20cr%C3%A9%C3%A9s%20%28envoi%20email%20activ%C3%A9%29';
+        if ($devisCreated && $sendQuoteEmail && $createdQuoteId > 0) {
+            $emailSent = $this->sendQuoteEmailInternal($userContext->companyId, $projectId, $createdQuoteId);
+            if ($emailSent) {
+                $msg = 'Affaire%20cr%C3%A9%C3%A9e%20et%20devis%20envoy%C3%A9%20par%20email';
+            } else {
+                $msg = 'Affaire%20et%20devis%20cr%C3%A9%C3%A9s%20%28envoi%20email%20%C3%A9chou%C3%A9%29';
+            }
         }
         $quoteParam = $createdQuoteId > 0 ? '&quoteId=' . $createdQuoteId : '';
         return Response::redirect('projects/show?projectId=' . $projectId . '&msg=' . $msg . $quoteParam);
-    }
-
-    public function assign(Request $request, UserContext $userContext): Response
-    {
-        if ($userContext->userId === null || $userContext->companyId === null) {
-            return Response::redirect('login');
-        }
-
-        if (!in_array('project.assign_team', $userContext->permissions, true)) {
-            return $this->renderPage('projects/assign.php', [
-                'pageTitle' => 'Affecter une équipe',
-                'permissionDenied' => true,
-            ]);
-        }
-
-        $projectIdRaw = $request->getQueryParam('projectId', 0);
-        $projectId = is_numeric($projectIdRaw) ? (int) $projectIdRaw : 0;
-        if ($projectId <= 0) {
-            return Response::redirect('clients?err=Affaire%20invalide');
-        }
-
-        $repoUsers = new UserListRepository();
-        $users = [];
-        try {
-            $users = $repoUsers->listByCompanyId($userContext->companyId);
-        } catch (\Throwable) {
-            $users = [];
-        }
-
-        $repoAssignments = new ProjectAssignmentRepository();
-        $assignedUserIds = [];
-        try {
-            $assignedUserIds = $repoAssignments->listAssignedUserIds($userContext->companyId, $projectId);
-        } catch (\Throwable) {
-            $assignedUserIds = [];
-        }
-
-        return $this->renderPage('projects/assign.php', [
-            'pageTitle' => 'Affecter une équipe',
-            'permissionDenied' => false,
-            'csrfToken' => Csrf::token(),
-            'projectId' => $projectId,
-            'users' => $users,
-            'assignedUserIds' => $assignedUserIds,
-        ]);
-    }
-
-    public function assignSave(Request $request, UserContext $userContext): Response
-    {
-        if ($userContext->userId === null || $userContext->companyId === null) {
-            return Response::redirect('login');
-        }
-
-        if (!in_array('project.assign_team', $userContext->permissions, true)) {
-            return Response::redirect('clients?err=Permissions%20insuffisantes');
-        }
-
-        $csrfToken = $request->getBodyParam('csrf_token', null);
-        if (!Csrf::verify(is_string($csrfToken) ? $csrfToken : null)) {
-            return Response::redirect('projects/assign?projectId=' . max(0, (int) $request->getBodyParam('project_id', 0)) . '&err=CSRF%20invalide');
-        }
-
-        $projectIdRaw = $request->getBodyParam('project_id', null);
-        $projectId = is_numeric($projectIdRaw) ? (int) $projectIdRaw : 0;
-
-        $userIds = $request->getBodyParam('user_ids', []);
-        $userIds = is_array($userIds) ? $userIds : [];
-
-        if ($projectId <= 0) {
-            return Response::redirect('clients?err=Affaire%20invalide');
-        }
-
-        $repoAssignments = new ProjectAssignmentRepository();
-        try {
-            $repoAssignments->syncAssignments(
-                companyId: $userContext->companyId,
-                projectId: $projectId,
-                userIds: $userIds,
-            );
-        } catch (\Throwable) {
-            return Response::redirect('projects/assign?projectId=' . $projectId . '&err=Impossible%20d%27affecter%20l%27%C3%A9quipe');
-        }
-
-        Csrf::rotate();
-        return Response::redirect('projects/show?projectId=' . $projectId . '&msg=%C3%89quipe%20mise%20%C3%A0%20jour');
     }
 
     public function show(Request $request, UserContext $userContext): Response
@@ -545,6 +503,18 @@ final class ProjectsController extends BaseController
         }
         try {
             $invoices = (new InvoiceRepository())->listByCompanyIdAndProjectId($userContext->companyId, $projectId, null, 200);
+            $invRepo = new InvoiceRepository();
+            foreach ($invoices as &$invRow) {
+                try {
+                    $invRow['paymentToken'] = $invRepo->ensurePaymentToken(
+                        $userContext->companyId,
+                        (int) ($invRow['id'] ?? 0)
+                    );
+                } catch (\Throwable) {
+                    $invRow['paymentToken'] = '';
+                }
+            }
+            unset($invRow);
         } catch (\Throwable) {
             $invoices = [];
         }
@@ -638,6 +608,9 @@ final class ProjectsController extends BaseController
         $invoiceAmount = 0.0;
         $remainingAmount = 0.0;
         foreach ($invoices as $inv) {
+            if ((string) ($inv['status'] ?? '') === 'annulee') {
+                continue;
+            }
             $invoiceAmount += (float) ($inv['amountTotal'] ?? 0);
             $remainingAmount += (float) ($inv['amountRemaining'] ?? 0);
             $paidAmount += (float) ($inv['amountPaid'] ?? 0);
@@ -647,7 +620,6 @@ final class ProjectsController extends BaseController
         $paidAmount = (float) round($paidAmount, 2);
         $quoteAmount = (float) round($quoteAmount, 2);
 
-        $canAssignTeam = in_array('project.assign_team', $userContext->permissions, true);
         $canCreateQuote = in_array('quote.create', $userContext->permissions, true);
         $companySettings = (new SmtpSettingsRepository())->getByCompanyId($userContext->companyId);
         $vatRate = is_numeric($companySettings['vat_rate'] ?? null) ? (float) $companySettings['vat_rate'] : 20.0;
@@ -659,6 +631,13 @@ final class ProjectsController extends BaseController
         $canPhotoRead = in_array('project.photo.read', $userContext->permissions, true);
         $canPhotoUpload = in_array('project.photo.upload', $userContext->permissions, true);
         $canInvoiceSend = in_array('invoice.read', $userContext->permissions, true);
+        $canInvoiceMarkPaid = in_array('invoice.mark_paid', $userContext->permissions, true);
+
+        try {
+            $defaultInvoiceDueDate = (new \DateTimeImmutable('now'))->modify('+30 days')->format('Y-m-d');
+        } catch (\Throwable) {
+            $defaultInvoiceDueDate = (new \DateTimeImmutable('now'))->modify('+30 days')->format('Y-m-d');
+        }
 
         return $this->renderPage('projects/show.php', [
             'pageTitle' => 'Fiche affaire',
@@ -674,11 +653,14 @@ final class ProjectsController extends BaseController
             'quoteVersions' => $quoteVersions,
             'quoteVersionIndex' => $quoteVersionIndex,
             'quoteItemsByQuoteId' => $quoteItemsByQuoteId,
-            'invoicesCount' => count($invoices),
+            'invoicesCount' => count(array_filter(
+                $invoices,
+                static fn (array $inv): bool => (string) ($inv['status'] ?? '') !== 'annulee'
+            )),
+            'invoices' => $invoices,
             'reports' => $reports,
             'photos' => $photos,
             'csrfToken' => Csrf::token(),
-            'canAssignTeam' => $canAssignTeam,
             'canCreateQuote' => $canCreateQuote,
             'canSendQuote' => $canSendQuote,
             'canPlanningCreate' => $canPlanningCreate,
@@ -687,10 +669,12 @@ final class ProjectsController extends BaseController
             'canPhotoRead' => $canPhotoRead,
             'canPhotoUpload' => $canPhotoUpload,
             'canInvoiceSend' => $canInvoiceSend,
+            'canInvoiceMarkPaid' => $canInvoiceMarkPaid,
             'flashMessage' => $request->getQueryParam('msg', null),
             'flashError' => $request->getQueryParam('err', null),
             'vatRate' => $vatRate,
             'proofRequired' => $proofRequired,
+            'defaultInvoiceDueDate' => $defaultInvoiceDueDate,
         ]);
     }
 
@@ -713,7 +697,7 @@ final class ProjectsController extends BaseController
         $sourceQuoteIdRaw = $request->getBodyParam('source_quote_id', 0);
         $sourceQuoteId = is_numeric($sourceQuoteIdRaw) ? (int) $sourceQuoteIdRaw : 0;
         $title = trim((string) $request->getBodyParam('quote_title', ''));
-        $sendQuoteEmail = (string) $request->getBodyParam('send_quote_email', '1') === '1';
+        $sendQuoteEmail = (string) $request->getBodyParam('send_quote_email', '') === '1';
 
         if ($projectId <= 0 || $sourceQuoteId <= 0) {
             return Response::redirect('projects/show?projectId=' . max(0, $projectId) . '&err=Version%20de%20devis%20invalide');
@@ -737,7 +721,7 @@ final class ProjectsController extends BaseController
         $priceItemIdsRaw = $request->getBodyParam('item_price_item_id', []);
         $quantitiesRaw = $request->getBodyParam('item_quantity', []);
         $unitPricesRaw = $request->getBodyParam('item_unit_price', []);
-        $timesRaw = $request->getBodyParam('item_estimated_time_minutes', []);
+        $timesRaw = $request->getBodyParam('item_estimated_time_hours', []);
         $saveToLibraryRaw = $request->getBodyParam('item_save_to_library', []);
 
         $itemNames = is_array($itemNamesRaw) ? $itemNamesRaw : [];
@@ -781,7 +765,7 @@ final class ProjectsController extends BaseController
             $nameItem = trim((string) ($itemNames[$i] ?? ''));
             $quantity = is_numeric($quantities[$i] ?? null) ? (float) $quantities[$i] : 0.0;
             $unitPrice = is_numeric($unitPrices[$i] ?? null) ? (float) $unitPrices[$i] : 0.0;
-            $estimated = is_numeric($times[$i] ?? null) ? (int) $times[$i] : null;
+            $estimated = self::estimatedMinutesFromHoursInput($times[$i] ?? null);
 
             $description = $nameItem;
             if ($priceItemId === null && $nameItem !== '') {
@@ -793,10 +777,8 @@ final class ProjectsController extends BaseController
             }
             if ($priceItemId !== null && isset($priceItemMap[$priceItemId])) {
                 $pi = $priceItemMap[$priceItemId];
-                if ($unitPrice <= 0) {
-                    $unitPrice = is_numeric($pi['unitPrice'] ?? null) ? (float) $pi['unitPrice'] : $unitPrice;
-                }
-                if ($estimated === null && is_numeric($pi['estimatedTimeMinutes'] ?? null)) {
+                $unitPrice = is_numeric($pi['unitPrice'] ?? null) ? (float) $pi['unitPrice'] : $unitPrice;
+                if (is_numeric($pi['estimatedTimeMinutes'] ?? null)) {
                     $estimated = (int) $pi['estimatedTimeMinutes'];
                 }
                 if ($nameItem === '') {
@@ -915,6 +897,9 @@ final class ProjectsController extends BaseController
             $priceItems = [];
         }
 
+        $smtp = (new SmtpSettingsRepository())->getByCompanyId($userContext->companyId);
+        $quoteVatRate = is_numeric($smtp['vat_rate'] ?? null) ? (float) $smtp['vat_rate'] : 20.0;
+
         return $this->renderPage('projects/quote_version_new.php', [
             'pageTitle' => 'Nouvelle version de devis',
             'permissionDenied' => false,
@@ -923,6 +908,7 @@ final class ProjectsController extends BaseController
             'sourceQuote' => $sourceQuote,
             'sourceItems' => $sourceItems,
             'priceItems' => $priceItems,
+            'quoteVatRate' => $quoteVatRate,
             'flashMessage' => $request->getQueryParam('msg', null),
             'flashError' => $request->getQueryParam('err', null),
             'canCreateQuote' => true,
@@ -939,10 +925,20 @@ final class ProjectsController extends BaseController
             return Response::redirect('clients?err=Permissions%20insuffisantes');
         }
 
+        $returnTo = trim((string) $request->getBodyParam('return_to', ''));
+        $returnTabRaw = trim((string) $request->getBodyParam('return_tab', 'all'));
+        $allowedReturnTabs = ['all', 'active', 'planned', 'waiting', 'done'];
+        $returnTab = in_array($returnTabRaw, $allowedReturnTabs, true) ? $returnTabRaw : 'all';
+        $fromProjects = $returnTo === 'projects';
+
         $csrfToken = $request->getBodyParam('csrf_token', null);
         if (!Csrf::verify(is_string($csrfToken) ? $csrfToken : null)) {
-            $clientId = (int) $request->getBodyParam('client_id', 0);
-            return Response::redirect('clients/show?clientId=' . max(0, $clientId) . '&err=CSRF%20invalide');
+            $clientIdEarly = (int) $request->getBodyParam('client_id', 0);
+            if ($fromProjects) {
+                return Response::redirect('projects?tab=' . rawurlencode($returnTab) . '&err=CSRF%20invalide');
+            }
+
+            return Response::redirect('clients/show?clientId=' . max(0, $clientIdEarly) . '&err=CSRF%20invalide');
         }
 
         $projectIdRaw = $request->getBodyParam('project_id', null);
@@ -955,12 +951,24 @@ final class ProjectsController extends BaseController
 
         $allowedStatuses = ['cancelled', 'refused_client'];
         if ($projectId <= 0) {
+            if ($fromProjects) {
+                return Response::redirect('projects?tab=' . rawurlencode($returnTab) . '&err=Affaire%20invalide');
+            }
+
             return Response::redirect('clients/show?clientId=' . max(0, $clientId) . '&err=Affaire%20invalide');
         }
         if (!in_array($newStatus, $allowedStatuses, true)) {
+            if ($fromProjects) {
+                return Response::redirect('projects?tab=' . rawurlencode($returnTab) . '&err=Statut%20invalide');
+            }
+
             return Response::redirect('clients/show?clientId=' . max(0, $clientId) . '&err=Statut%20invalide');
         }
         if ($reason === '') {
+            if ($fromProjects) {
+                return Response::redirect('projects?tab=' . rawurlencode($returnTab) . '&err=Raison%20requise');
+            }
+
             return Response::redirect('clients/show?clientId=' . max(0, $clientId) . '&err=Raison%20requise');
         }
 
@@ -972,11 +980,19 @@ final class ProjectsController extends BaseController
                 reason: $reason
             );
         } catch (\Throwable) {
+            if ($fromProjects) {
+                return Response::redirect('projects?tab=' . rawurlencode($returnTab) . '&err=Impossible%20de%20mettre%20%C3%A0%20jour');
+            }
+
             return Response::redirect('clients/show?clientId=' . max(0, $clientId) . '&err=Impossible%20de%20mettre%20%C3%A0%20jour');
         }
 
         Csrf::rotate();
         $msg = $newStatus === 'cancelled' ? 'Affaire%20annul%C3%A9e' : 'Refus%20client%20enregistr%C3%A9';
+        if ($fromProjects) {
+            return Response::redirect('projects?tab=' . rawurlencode($returnTab) . '&msg=' . $msg);
+        }
+
         return Response::redirect('clients/show?clientId=' . max(0, $clientId) . '&msg=' . $msg);
     }
 
@@ -1055,6 +1071,7 @@ final class ProjectsController extends BaseController
         if ($hasAccepted) {
             return Response::redirect('projects/show?projectId=' . $projectId . '&quoteVersionId=' . $quoteId . '&err=Un%20devis%20est%20deja%20valide');
         }
+        $invoiceDueRaw = trim((string) $request->getBodyParam('invoice_due_date', ''));
         try {
             $now = new \DateTimeImmutable('now');
             $quoteRepo->markQuoteAsAcceptedWithProofPath(
@@ -1064,11 +1081,68 @@ final class ProjectsController extends BaseController
                 proofFilePathRelative: $proofRelativePath,
             );
             (new ProjectRepository())->markWaitingPlanning($userContext->companyId, $projectId);
+            $this->createDraftInvoiceForAcceptedQuoteIfMissing(
+                companyId: $userContext->companyId,
+                projectId: $projectId,
+                quoteId: $quoteId,
+                userId: (int) $userContext->userId,
+                dueDateYmd: $invoiceDueRaw,
+            );
         } catch (\Throwable) {
             return Response::redirect('projects/show?projectId=' . $projectId . '&quoteVersionId=' . $quoteId . '&err=Validation%20impossible');
         }
         Csrf::rotate();
         return Response::redirect('projects/show?projectId=' . $projectId . '&quoteVersionId=' . $quoteId . '&msg=Devis%20valide%2C%20affaire%20en%20attente%20de%20planification');
+    }
+
+    /**
+     * Crée une facture brouillon liée au devis accepté (une seule fois par devis).
+     */
+    private function createDraftInvoiceForAcceptedQuoteIfMissing(
+        int $companyId,
+        int $projectId,
+        int $quoteId,
+        int $userId,
+        string $dueDateYmd,
+    ): void {
+        $invoiceRepo = new InvoiceRepository();
+        if ($invoiceRepo->existsByCompanyIdAndQuoteId($companyId, $quoteId)) {
+            return;
+        }
+        $quoteRepo = new QuoteRepository();
+        $q = $quoteRepo->findByCompanyIdAndId($companyId, $quoteId);
+        if (!is_array($q) || (int) ($q['projectId'] ?? 0) !== $projectId) {
+            return;
+        }
+        if ((string) ($q['status'] ?? '') !== 'accepte') {
+            return;
+        }
+
+        $due = trim($dueDateYmd);
+        if ($due !== '') {
+            try {
+                $due = (new \DateTimeImmutable($due))->format('Y-m-d');
+            } catch (\Throwable) {
+                $due = '';
+            }
+        }
+        if ($due === '') {
+            $due = (new \DateTimeImmutable('now'))->modify('+30 days')->format('Y-m-d');
+        }
+
+        $totals = InvoiceAmountsService::fromQuote($companyId, $quoteId);
+        $invoiceRepo->createInvoiceFromQuote(
+            companyId: $companyId,
+            quoteId: $quoteId,
+            clientId: (int) ($q['clientId'] ?? 0),
+            invoiceNumber: null,
+            title: (string) (($q['title'] ?? '') !== '' ? $q['title'] : ('Facture affaire #' . $projectId)),
+            dueDateYmd: $due,
+            status: 'brouillon',
+            amountTotal: $totals['ttc'],
+            createdByUserId: $userId,
+            notes: 'Facture générée automatiquement à l\'acceptation du devis.'
+        );
     }
 
     /**
@@ -1137,6 +1211,7 @@ final class ProjectsController extends BaseController
         $addr = trim((string) $request->getBodyParam('site_address', ''));
         $city = trim((string) $request->getBodyParam('site_city', ''));
         $postal = trim((string) $request->getBodyParam('site_postal_code', ''));
+        $invoiceDueRaw = trim((string) $request->getBodyParam('invoice_due_date', ''));
         if ($projectId <= 0 || $start === '' || $end === '') {
             return Response::redirect('projects/show?projectId=' . max(0, $projectId) . '&err=Informations%20de%20planification%20invalides');
         }
@@ -1162,35 +1237,6 @@ final class ProjectsController extends BaseController
                 endAt: new \DateTimeImmutable($end . ' 17:00:00'),
                 createdByUserId: $userContext->userId
             );
-
-            // Génération automatique de la facture au moment de la planification.
-            $quoteRepo = new QuoteRepository();
-            $invoiceRepo = new InvoiceRepository();
-            $quotes = $quoteRepo->listByCompanyIdAndProjectId($userContext->companyId, $projectId, null, 300);
-            foreach ($quotes as $q) {
-                if ((string) ($q['status'] ?? '') !== 'accepte') {
-                    continue;
-                }
-                $quoteId = (int) ($q['id'] ?? 0);
-                if ($quoteId <= 0 || $invoiceRepo->existsByCompanyIdAndQuoteId($userContext->companyId, $quoteId)) {
-                    continue;
-                }
-                $amountTotal = $quoteRepo->computeQuoteTotalAmount($userContext->companyId, $quoteId);
-                $dueDate = (new \DateTimeImmutable($end . ' 00:00:00'))->modify('+30 days')->format('Y-m-d');
-                $invoiceRepo->createInvoiceFromQuote(
-                    companyId: $userContext->companyId,
-                    quoteId: $quoteId,
-                    clientId: (int) ($q['clientId'] ?? 0),
-                    invoiceNumber: null,
-                    title: (string) (($q['title'] ?? '') !== '' ? $q['title'] : ('Facture affaire #' . $projectId)),
-                    dueDateYmd: $dueDate,
-                    status: 'brouillon',
-                    amountTotal: $amountTotal,
-                    createdByUserId: (int) $userContext->userId,
-                    notes: 'Facture générée automatiquement à la planification.'
-                );
-                break;
-            }
         } catch (\Throwable) {
             return Response::redirect('projects/show?projectId=' . $projectId . '&err=Planification%20impossible');
         }
@@ -1243,22 +1289,27 @@ final class ProjectsController extends BaseController
             $basePath = ($basePath === '.' || $basePath === '\\') ? '' : $basePath;
             $quoteLink = $scheme . '://' . $host . $basePath . '/quotes/view?token=' . urlencode($token);
             $smtp = (new SmtpSettingsRepository())->getByCompanyId($companyId);
-            $companyName = (string) (($smtp['from_name'] ?? '') !== '' ? $smtp['from_name'] : 'Pilora');
+            $companyIdentity = (new CompanyRepository())->getDocumentIdentity($companyId, $smtp);
+            $companyName = (string) $companyIdentity['name'];
 
             $vatRate = is_numeric($smtp['vat_rate'] ?? null) ? (float) $smtp['vat_rate'] : 20.0;
+            $vatAmount = round($totalHt * ($vatRate / 100), 2);
+            $totalTtc = round($totalHt + $vatAmount, 2);
             $viewData = [
                 'project' => $project,
                 'quote' => $quote,
                 'client' => $client ?? [],
                 'contact' => $contact ?? [],
                 'company' => [
-                    'name' => (string) (($smtp['from_name'] ?? '') !== '' ? $smtp['from_name'] : 'Pilora'),
-                    'email' => (string) ($smtp['from_email'] ?? ''),
+                    'name' => $companyIdentity['name'],
+                    'email' => $companyIdentity['email'],
+                    'billing_email' => $companyIdentity['billing_email'],
                 ],
                 'items' => $items,
                 'totalHt' => $totalHt,
                 'vatRate' => $vatRate,
-                'totalTtc' => $totalHt * (1 + ($vatRate / 100)),
+                'vatAmount' => $vatAmount,
+                'totalTtc' => $totalTtc,
                 'quoteLink' => $quoteLink,
             ];
             $viewsRoot = dirname(__DIR__, 3) . '/app/views';
@@ -1325,9 +1376,11 @@ final class ProjectsController extends BaseController
             }
         }
         $smtp = (new SmtpSettingsRepository())->getByCompanyId($companyId);
+        $companyIdentity = (new CompanyRepository())->getDocumentIdentity($companyId, $smtp);
         $companyInfo = [
-            'name' => (string) (($smtp['from_name'] ?? '') !== '' ? $smtp['from_name'] : 'Pilora'),
-            'email' => (string) ($smtp['from_email'] ?? ''),
+            'name' => $companyIdentity['name'],
+            'email' => $companyIdentity['email'],
+            'billing_email' => $companyIdentity['billing_email'],
         ];
 
         $totalHt = 0.0;
@@ -1337,6 +1390,8 @@ final class ProjectsController extends BaseController
         $totalHt = (float) round($totalHt, 2);
         $smtp = (new SmtpSettingsRepository())->getByCompanyId($companyId);
         $vatRate = is_numeric($smtp['vat_rate'] ?? null) ? (float) $smtp['vat_rate'] : 20.0;
+        $vatAmount = round($totalHt * ($vatRate / 100), 2);
+        $totalTtc = round($totalHt + $vatAmount, 2);
 
         $viewsRoot = dirname(__DIR__, 3) . '/app/views';
         $html = View::render($viewsRoot . '/quotes/public_view.php', [
@@ -1348,7 +1403,8 @@ final class ProjectsController extends BaseController
             'token' => $token,
             'vatRate' => $vatRate,
             'totalHt' => $totalHt,
-            'totalTtc' => $totalHt * (1 + ($vatRate / 100)),
+            'vatAmount' => $vatAmount,
+            'totalTtc' => $totalTtc,
         ]);
         return new Response($html, 200, ['Content-Type' => 'text/html; charset=utf-8']);
     }
@@ -1396,7 +1452,7 @@ final class ProjectsController extends BaseController
         } catch (\Throwable) {
             return Response::redirect('quotes/view?token=' . urlencode($token) . '&err=Impossible%20d%27envoyer%20le%20code');
         }
-        return Response::redirect('quotes/view?token=' . urlencode($token) . '&msg=Code%20envoye');
+        return Response::redirect('quotes/view?token=' . urlencode($token) . '&msg=' . rawurlencode('Code envoyé'));
     }
 
     public function confirmQuoteSignature(Request $request, UserContext $userContext): Response
@@ -1449,11 +1505,18 @@ final class ProjectsController extends BaseController
             $projectId = is_numeric($quote['projectId'] ?? null) ? (int) $quote['projectId'] : 0;
             if ($projectId > 0) {
                 (new ProjectRepository())->markWaitingPlanning($companyId, $projectId);
+                $this->createDraftInvoiceForAcceptedQuoteIfMissing(
+                    companyId: $companyId,
+                    projectId: $projectId,
+                    quoteId: $quoteId,
+                    userId: (int) ($userContext->userId ?? 0),
+                    dueDateYmd: '',
+                );
             }
         } catch (\Throwable) {
             return Response::redirect('quotes/view?token=' . urlencode($token) . '&err=Signature%20enregistree%20mais%20validation%20devis%20echouee');
         }
-        return Response::redirect('quotes/view?token=' . urlencode($token) . '&msg=Devis%20deja%20signe%20et%20valide');
+        return Response::redirect('quotes/view?token=' . urlencode($token) . '&msg=' . rawurlencode('Signature enregistrée — le devis est accepté.'));
     }
 
     public function downloadSignedQuotePdf(Request $request, UserContext $userContext): Response
@@ -1480,18 +1543,23 @@ final class ProjectsController extends BaseController
         $smtp = (new SmtpSettingsRepository())->getByCompanyId($companyId);
         $vatRate = is_numeric($smtp['vat_rate'] ?? null) ? (float) $smtp['vat_rate'] : 20.0;
         $totalHt = 0.0;
-        foreach ($items as $it) $totalHt += (float) ($it['lineTotal'] ?? 0);
+        foreach ($items as $it) {
+            $totalHt += (float) ($it['lineTotal'] ?? 0);
+        }
         $totalHt = (float) round($totalHt, 2);
+        $vatAmount = round($totalHt * ($vatRate / 100), 2);
+        $totalTtc = round($totalHt + $vatAmount, 2);
         $viewsRoot = dirname(__DIR__, 3) . '/app/views';
         $html = View::render($viewsRoot . '/quotes/pdf.php', [
             'quote' => $quote,
             'items' => $items,
             'client' => $client ?? [],
             'contact' => $contact ?? [],
-            'company' => ['name' => (string) (($smtp['from_name'] ?? '') !== '' ? $smtp['from_name'] : 'Pilora'), 'email' => (string) ($smtp['from_email'] ?? '')],
+            'company' => (new CompanyRepository())->getDocumentIdentity($companyId, $smtp),
             'vatRate' => $vatRate,
             'totalHt' => $totalHt,
-            'totalTtc' => $totalHt * (1 + ($vatRate / 100)),
+            'vatAmount' => $vatAmount,
+            'totalTtc' => $totalTtc,
         ]);
         $pdf = (new QuoteDeliveryService())->buildPdf($html);
         return new Response($pdf, 200, [

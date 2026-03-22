@@ -16,6 +16,7 @@ declare(strict_types=1);
         th,td{border-bottom:1px solid #e2e8f0;padding:10px 8px;text-align:left}
         th{background:#f1f8fc}
         th:nth-child(n+2),td:nth-child(n+2){text-align:right}
+        th.col-unit,td.col-unit{text-align:center}
         tfoot td{border-top:2px solid #dbe7ef;font-weight:700;background:#f8fbfd}
         tfoot .totals-label{text-align:right}
     </style>
@@ -28,8 +29,17 @@ declare(strict_types=1);
             <td>
                 <div class="block">
                     <strong>Entreprise</strong><br>
-                    <?= htmlspecialchars((string) ($company['name'] ?? 'Pilora'), ENT_QUOTES, 'UTF-8') ?><br>
-                    <span class="muted"><?= htmlspecialchars((string) ($company['email'] ?? ''), ENT_QUOTES, 'UTF-8') ?></span><br>
+                    <?= htmlspecialchars((string) ($company['name'] ?? 'Entreprise'), ENT_QUOTES, 'UTF-8') ?><br>
+                    <?php if (!empty($company['email'])): ?>
+                        <span class="muted"><?= htmlspecialchars((string) $company['email'], ENT_QUOTES, 'UTF-8') ?></span><br>
+                    <?php endif; ?>
+                    <?php
+                        $be = trim((string) ($company['billing_email'] ?? ''));
+                        $em = trim((string) ($company['email'] ?? ''));
+                        if ($be !== '' && $be !== $em):
+                    ?>
+                        <span class="muted">Email facturation : <?= htmlspecialchars($be, ENT_QUOTES, 'UTF-8') ?></span><br>
+                    <?php endif; ?>
                     <span class="muted">Numero: <?= htmlspecialchars((string) ($quote['quoteNumber'] ?? ('DEV-' . (int) ($quote['id'] ?? 0))), ENT_QUOTES, 'UTF-8') ?></span>
                 </div>
             </td>
@@ -50,26 +60,37 @@ declare(strict_types=1);
     </table>
     <table>
         <thead>
-            <tr><th>Prestation</th><th>Qte</th><th>PU</th><th>Total</th></tr>
+            <tr><th>Prestation</th><th>Qté</th><th class="col-unit">Unité</th><th>PU HT</th><th>Total HT</th></tr>
         </thead>
         <tbody>
             <?php foreach (($items ?? []) as $it): ?>
+                <?php $uLab = trim((string) ($it['unitLabel'] ?? '')); ?>
                 <tr>
                     <td><?= htmlspecialchars((string) ($it['description'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                     <td><?= htmlspecialchars((string) number_format((float) ($it['quantity'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?></td>
-                    <td><?= htmlspecialchars((string) number_format((float) ($it['unitPrice'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> EUR</td>
-                    <td><?= htmlspecialchars((string) number_format((float) ($it['lineTotal'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> EUR</td>
+                    <td class="col-unit"><?= $uLab !== '' ? htmlspecialchars($uLab, ENT_QUOTES, 'UTF-8') : '—' ?></td>
+                    <td><?= htmlspecialchars((string) number_format((float) ($it['unitPrice'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</td>
+                    <td><?= htmlspecialchars((string) number_format((float) ($it['lineTotal'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</td>
                 </tr>
             <?php endforeach; ?>
         </tbody>
         <tfoot>
+            <?php
+                $totHt = (float) ($totalHt ?? 0);
+                $totTtc = (float) ($totalTtc ?? 0);
+                $vatAmt = isset($vatAmount) ? (float) $vatAmount : round(max(0, $totTtc - $totHt), 2);
+            ?>
             <tr>
-                <td colspan="3" class="totals-label">Total HT</td>
-                <td><?= htmlspecialchars((string) number_format((float) ($totalHt ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</td>
+                <td colspan="4" class="totals-label">Total HT</td>
+                <td><?= htmlspecialchars((string) number_format($totHt, 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</td>
             </tr>
             <tr>
-                <td colspan="3" class="totals-label">Total TTC (<?= htmlspecialchars((string) number_format((float) ($vatRate ?? 20), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> %)</td>
-                <td><?= htmlspecialchars((string) number_format((float) ($totalTtc ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</td>
+                <td colspan="4" class="totals-label">TVA (<?= htmlspecialchars((string) number_format((float) ($vatRate ?? 20), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> %)</td>
+                <td><?= htmlspecialchars((string) number_format($vatAmt, 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</td>
+            </tr>
+            <tr>
+                <td colspan="4" class="totals-label">Total TTC</td>
+                <td><?= htmlspecialchars((string) number_format($totTtc, 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</td>
             </tr>
         </tfoot>
     </table>

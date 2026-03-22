@@ -32,6 +32,13 @@ declare(strict_types=1);
         </form>
     </div>
 <?php endif; ?>
+<?php if (!empty($billingLockBanner) && is_array($billingLockBanner)): ?>
+    <div class="impersonation-banner" role="alert" style="background:#7f1d1d;">
+        <span><?= htmlspecialchars((string) ($billingLockBanner['message'] ?? ''), ENT_QUOTES, 'UTF-8') ?></span>
+        <?php $basePath = isset($basePath) && is_string($basePath) ? $basePath : ''; ?>
+        <a class="btn btn-sm" href="<?= htmlspecialchars($basePath . '/settings?tab=billing', ENT_QUOTES, 'UTF-8') ?>" style="margin-left:1rem;">Aller à la facturation</a>
+    </div>
+<?php endif; ?>
 <div class="app-shell">
     <?php require __DIR__ . '/../partials/topbar.php'; ?>
     <div class="app-body">

@@ -8,6 +8,8 @@ use Core\Context\UserContext;
 use Core\Http\Request;
 use Core\Http\Response;
 use Core\Security\Csrf;
+use Modules\Companies\Repositories\CompanyRepository;
+use Modules\Platform\Repositories\PackRepository;
 use Modules\Rbac\Repositories\RbacAdminRepository;
 use Modules\Quotes\Services\QuoteDeliveryService;
 use Modules\Settings\Repositories\SmtpSettingsRepository;
@@ -16,7 +18,7 @@ use Modules\Users\Repositories\UserAdminRepository;
 final class SettingsController extends BaseController
 {
     private const ADMIN_PERMISSION = 'admin.company.manage';
-    private const SETTINGS_TABS = ['general', 'smtp', 'email_templates', 'users', 'rbac'];
+    private const SETTINGS_TABS = ['general', 'smtp', 'email_templates', 'users', 'rbac', 'billing'];
 
     public function index(Request $request, UserContext $userContext): Response
     {
@@ -25,7 +27,9 @@ final class SettingsController extends BaseController
         }
 
         $hasAccess = in_array(self::ADMIN_PERMISSION, $userContext->permissions, true);
-        if (!$hasAccess) {
+        $activeTabRaw = (string) $request->getQueryParam('tab', 'general');
+        $activeTab = in_array($activeTabRaw, self::SETTINGS_TABS, true) ? $activeTabRaw : 'smtp';
+        if (!$hasAccess && $activeTab !== 'billing') {
             return $this->renderPage('settings/index.php', [
                 'pageTitle' => 'Paramètres',
                 'permissionDenied' => true,
@@ -36,8 +40,8 @@ final class SettingsController extends BaseController
         $repoUsers = new UserAdminRepository();
         $repoRbac = new RbacAdminRepository();
 
-        $activeTabRaw = (string) $request->getQueryParam('tab', 'general');
-        $activeTab = in_array($activeTabRaw, self::SETTINGS_TABS, true) ? $activeTabRaw : 'smtp';
+        $emailSubRaw = (string) $request->getQueryParam('email_sub', 'quote');
+        $emailSubTab = in_array($emailSubRaw, ['quote', 'invoice', 'invoice_paid'], true) ? $emailSubRaw : 'quote';
         $roleIdToEditRaw = $request->getQueryParam('roleId', '');
         $roleIdToEdit = is_numeric($roleIdToEditRaw) ? (int) $roleIdToEditRaw : null;
 
@@ -57,7 +61,10 @@ final class SettingsController extends BaseController
                 'roleIdToEdit' => null,
                 'permissionsForRole' => [],
                 'smtpSettings' => (new SmtpSettingsRepository())->getByCompanyId($companyId),
+                'company' => (new CompanyRepository())->findById($companyId) ?: [],
+                'packs' => [],
                 'activeTab' => $activeTab,
+                'emailSubTab' => $emailSubTab,
                 'flashError' => 'Erreur chargement paramètres.',
                 'flashMessage' => null,
             ]);
@@ -74,6 +81,14 @@ final class SettingsController extends BaseController
             $permissionsForRole = $repoRbac->listPermissionIdsForRole($companyId, $roleIdToEdit);
         }
 
+        $company = (new CompanyRepository())->findById($companyId) ?: [];
+        $packs = [];
+        try {
+            $packs = (new PackRepository())->listAll();
+        } catch (\Throwable) {
+            $packs = [];
+        }
+
         return $this->renderPage('settings/index.php', [
             'pageTitle' => 'Paramètres',
             'permissionDenied' => false,
@@ -85,10 +100,60 @@ final class SettingsController extends BaseController
             'roleIdToEdit' => $roleIdToEdit,
             'permissionsForRole' => $permissionsForRole,
             'smtpSettings' => (new SmtpSettingsRepository())->getByCompanyId($companyId),
+            'company' => $company,
+            'packs' => $packs,
             'activeTab' => $activeTab,
+            'emailSubTab' => $emailSubTab,
             'flashMessage' => $request->getQueryParam('msg', null),
             'flashError' => $request->getQueryParam('err', null),
         ]);
+    }
+
+    public function subscribeBilling(Request $request, UserContext $userContext): Response
+    {
+        if ($userContext->userId === null || $userContext->companyId === null) {
+            return Response::redirect('login');
+        }
+        $csrfToken = $request->getBodyParam('csrf_token', null);
+        if (!Csrf::verify(is_string($csrfToken) ? $csrfToken : null)) {
+            return Response::redirect('settings?tab=billing&err=Requete%20invalide');
+        }
+
+        $packId = (int) $request->getBodyParam('pack_id', 0);
+        $cycle = trim((string) $request->getBodyParam('billing_cycle', 'monthly'));
+        if (!in_array($cycle, ['monthly', 'annual'], true)) {
+            $cycle = 'monthly';
+        }
+
+        $selected = null;
+        foreach ((new PackRepository())->listAll() as $p) {
+            if ((int) ($p['id'] ?? 0) === $packId) {
+                $selected = $p;
+                break;
+            }
+        }
+        if (!is_array($selected) || (float) ($selected['price'] ?? 0) <= 0) {
+            return Response::redirect('settings?tab=billing&err=Choisissez%20un%20pack%20payant');
+        }
+
+        $nextRenew = (new \DateTimeImmutable('today'));
+        $nextRenew = $cycle === 'annual' ? $nextRenew->modify('+1 year') : $nextRenew->modify('+1 month');
+
+        try {
+            (new CompanyRepository())->updateBilling($userContext->companyId, [
+                'billingPlan' => (string) ($selected['name'] ?? ''),
+                'billingStatus' => 'active',
+                'billingCycle' => $cycle,
+                'maxSeats' => max(0, (int) ($selected['maxUsers'] ?? 0)),
+                'subscriptionRenewsAt' => $nextRenew->format('Y-m-d'),
+                'externalBillingRef' => null,
+            ]);
+        } catch (\Throwable) {
+            return Response::redirect('settings?tab=billing&err=Impossible%20de%20souscrire');
+        }
+
+        Csrf::rotate();
+        return Response::redirect('settings?tab=billing&msg=Abonnement%20active');
     }
 
     public function newUser(Request $request, UserContext $userContext): Response
@@ -150,7 +215,13 @@ final class SettingsController extends BaseController
         $proofRequired = (string) $request->getBodyParam('proof_required', '0') === '1' ? '1' : '0';
         $quoteEmailSubject = trim((string) $request->getBodyParam('quote_email_subject', ''));
         $quoteEmailBody = trim((string) $request->getBodyParam('quote_email_body', ''));
+        $invoiceEmailSubject = trim((string) $request->getBodyParam('invoice_email_subject', ''));
+        $invoiceEmailBody = trim((string) $request->getBodyParam('invoice_email_body', ''));
+        $invoicePaidEmailSubject = trim((string) $request->getBodyParam('invoice_paid_email_subject', ''));
+        $invoicePaidEmailBody = trim((string) $request->getBodyParam('invoice_paid_email_body', ''));
         $settingsTab = trim((string) $request->getBodyParam('settings_tab', 'smtp'));
+        $emailSubPost = trim((string) $request->getBodyParam('email_sub', ''));
+        $emailSubPersist = in_array($emailSubPost, ['quote', 'invoice', 'invoice_paid'], true) ? $emailSubPost : 'quote';
         if (!in_array($settingsTab, self::SETTINGS_TABS, true)) {
             $settingsTab = 'smtp';
         }
@@ -174,11 +245,57 @@ final class SettingsController extends BaseController
             $newLogoPath = $uploadedLogo;
         }
 
+        if ($settingsTab === 'general') {
+            $companyNameInput = trim((string) $request->getBodyParam('company_name', ''));
+            if ($companyNameInput === '' || mb_strlen($companyNameInput) > 255) {
+                return Response::redirect('settings?tab=general&err=Nom%20de%20l%27entreprise%20invalide');
+            }
+            try {
+                (new CompanyRepository())->updateCore($userContext->companyId, ['name' => $companyNameInput]);
+            } catch (\Throwable) {
+                return Response::redirect('settings?tab=general&err=Impossible%20de%20mettre%20a%20jour%20le%20nom');
+            }
+        }
+
         try {
             $existing = (new SmtpSettingsRepository())->getByCompanyId($userContext->companyId);
             $logoPath = $newLogoPath !== ''
                 ? $newLogoPath
                 : (string) ($existing['company_logo_path'] ?? '');
+            if ($quoteEmailSubject === '') {
+                $quoteEmailSubject = (string) ($existing['quote_email_subject'] ?? 'Votre devis {{quote_number}}');
+            }
+            if ($quoteEmailBody === '') {
+                $quoteEmailBody = (string) ($existing['quote_email_body'] ?? "Bonjour,\n\nVeuillez trouver votre devis en pièce jointe (PDF).\nVous pouvez aussi le consulter en ligne : {{quote_link}}\n\nCordialement,\n{{company_name}}");
+            }
+            if ($invoiceEmailSubject === '') {
+                $invoiceEmailSubject = (string) ($existing['invoice_email_subject'] ?? 'Votre facture {{invoice_number}}');
+            }
+            if ($invoiceEmailBody === '') {
+                $invoiceEmailBody = (string) ($existing['invoice_email_body'] ?? "Bonjour,\n\nVeuillez trouver votre facture en pièce jointe (PDF).\n\nConsultez ou payez en ligne : {{invoice_link}}\n\nCordialement,\n{{company_name}}");
+            }
+            if ($invoicePaidEmailSubject === '') {
+                $invoicePaidEmailSubject = (string) ($existing['invoice_paid_email_subject'] ?? 'Réception de votre paiement — {{invoice_number}}');
+            }
+            if ($invoicePaidEmailBody === '') {
+                $invoicePaidEmailBody = (string) ($existing['invoice_paid_email_body'] ?? "Bonjour {{client_name}},\n\nNous accusons réception de votre paiement pour la facture {{invoice_number}} ({{amount_paid}}).\n\nMerci pour votre confiance.\n\nCordialement,\n{{company_name}}");
+            }
+
+            $stripeEnabled = (string) ($existing['stripe_online_payment_enabled'] ?? '0');
+            $stripeSecret = (string) ($existing['stripe_secret_key'] ?? '');
+            $stripeWebhookSecret = (string) ($existing['stripe_webhook_secret'] ?? '');
+            if ($settingsTab === 'general') {
+                $stripeEnabled = (string) $request->getBodyParam('stripe_online_payment_enabled', '') === '1' ? '1' : '0';
+                $stripeSecretInput = trim((string) $request->getBodyParam('stripe_secret_key', ''));
+                if ($stripeSecretInput !== '') {
+                    $stripeSecret = $stripeSecretInput;
+                }
+                $stripeWebhookInput = trim((string) $request->getBodyParam('stripe_webhook_secret', ''));
+                if ($stripeWebhookInput !== '') {
+                    $stripeWebhookSecret = $stripeWebhookInput;
+                }
+            }
+
             (new SmtpSettingsRepository())->saveByCompanyId($userContext->companyId, [
                 'host' => $host !== '' ? $host : (string) ($existing['host'] ?? ''),
                 'port' => $port > 0 ? $port : (int) ($existing['port'] ?? 587),
@@ -190,19 +307,34 @@ final class SettingsController extends BaseController
                 'from_name' => $fromName !== '' ? $fromName : (string) ($existing['from_name'] ?? ''),
                 'vat_rate' => $vatRate,
                 'proof_required' => $proofRequired,
-                'quote_email_subject' => $quoteEmailSubject !== '' ? $quoteEmailSubject : 'Votre devis {{quote_number}}',
-                'quote_email_body' => $quoteEmailBody !== '' ? $quoteEmailBody : "Bonjour,\n\nVeuillez trouver votre devis en pièce jointe (PDF).\nVous pouvez aussi le consulter en ligne : {{quote_link}}\n\nCordialement,\n{{company_name}}",
+                'quote_email_subject' => $quoteEmailSubject,
+                'quote_email_body' => $quoteEmailBody,
+                'invoice_email_subject' => $invoiceEmailSubject,
+                'invoice_email_body' => $invoiceEmailBody,
+                'invoice_paid_email_subject' => $invoicePaidEmailSubject,
+                'invoice_paid_email_body' => $invoicePaidEmailBody,
                 'company_logo_path' => $logoPath,
+                'stripe_online_payment_enabled' => $stripeEnabled,
+                'stripe_secret_key' => $stripeSecret,
+                'stripe_webhook_secret' => $stripeWebhookSecret,
             ]);
         } catch (\Throwable) {
-            return Response::redirect('settings?tab=' . urlencode($settingsTab) . '&err=Impossible%20de%20sauvegarder%20SMTP');
+            $suffix = $settingsTab === 'email_templates'
+                ? '&email_sub=' . urlencode($emailSubPersist)
+                : '';
+            return Response::redirect('settings?tab=' . urlencode($settingsTab) . $suffix . '&err=Impossible%20de%20sauvegarder%20SMTP');
         }
 
         Csrf::rotate();
-        $msg = $settingsTab === 'general'
-            ? 'Parametres%20generaux%20enregistres'
-            : 'Parametres%20SMTP%20enregistres';
-        return Response::redirect('settings?tab=' . urlencode($settingsTab) . '&msg=' . $msg);
+        $msg = match ($settingsTab) {
+            'general' => 'Parametres%20generaux%20enregistres',
+            'email_templates' => 'Modeles%20emails%20enregistres',
+            default => 'Parametres%20SMTP%20enregistres',
+        };
+        $emailSuffix = $settingsTab === 'email_templates'
+            ? '&email_sub=' . urlencode($emailSubPersist)
+            : '';
+        return Response::redirect('settings?tab=' . urlencode($settingsTab) . $emailSuffix . '&msg=' . $msg);
     }
 
     /**

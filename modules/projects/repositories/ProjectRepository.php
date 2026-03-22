@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace Modules\Projects\Repositories;
 
 use Core\Database\Connection;
+use Modules\Invoices\Repositories\InvoiceRepository;
+use Modules\Quotes\Repositories\QuoteRepository;
 use PDO;
 
 final class ProjectRepository
@@ -40,6 +42,71 @@ final class ProjectRepository
         ');
         $stmt->bindValue('companyId', $companyId, PDO::PARAM_INT);
         $stmt->bindValue('limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
+     * Liste des affaires avec filtre par onglet (GET ?tab=).
+     *
+     * @param 'all'|'active'|'planned'|'waiting'|'done' $tab
+     * @return array<int, array{
+     *   id:int,
+     *   name:string,
+     *   status:string,
+     *   plannedStartDate:?string,
+     *   plannedEndDate:?string,
+     *   notes:?string,
+     *   clientName:string
+     * }>
+     */
+    public function listByCompanyIdWithTab(int $companyId, string $tab, int $limit = 300): array
+    {
+        $allowed = ['all', 'active', 'planned', 'waiting', 'done'];
+        if (!in_array($tab, $allowed, true)) {
+            $tab = 'all';
+        }
+
+        $pdo = Connection::pdo();
+
+        $sql = '
+            SELECT
+                p.id,
+                p.clientId,
+                p.name,
+                p.status,
+                p.plannedStartDate,
+                p.plannedEndDate,
+                p.notes,
+                c.name AS clientName
+            FROM Project p
+            INNER JOIN Client c
+                ON c.id = p.clientId
+               AND c.companyId = p.companyId
+            WHERE p.companyId = :companyId
+        ';
+
+        if ($tab === 'active') {
+            $sql .= ' AND p.status IN ("in_progress", "paused")';
+        } elseif ($tab === 'planned') {
+            $sql .= ' AND p.status = "planned"
+              AND (p.notes IS NULL OR p.notes NOT LIKE :waitingMarker)';
+        } elseif ($tab === 'waiting') {
+            $sql .= ' AND p.notes LIKE :waitingMarker';
+        } elseif ($tab === 'done') {
+            $sql .= ' AND p.status = "completed"';
+        }
+
+        $sql .= ' ORDER BY p.id DESC LIMIT :limit';
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->bindValue('companyId', $companyId, PDO::PARAM_INT);
+        $stmt->bindValue('limit', $limit, PDO::PARAM_INT);
+        if ($tab === 'planned' || $tab === 'waiting') {
+            $stmt->bindValue('waitingMarker', '%[STATUS:WAITING_PLANNING]%', PDO::PARAM_STR);
+        }
+
         $stmt->execute();
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -193,6 +260,22 @@ final class ProjectRepository
     ): bool {
         $pdo = Connection::pdo();
 
+        $stmtLoad = $pdo->prepare('
+            SELECT id, clientId, name
+            FROM Project
+            WHERE companyId = :companyId
+              AND id = :projectId
+            LIMIT 1
+        ');
+        $stmtLoad->execute([
+            'companyId' => $companyId,
+            'projectId' => $projectId,
+        ]);
+        $projectRow = $stmtLoad->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($projectRow)) {
+            return false;
+        }
+
         $reason = $reason !== null ? trim($reason) : null;
         $reason = ($reason !== '') ? $reason : null;
 
@@ -205,23 +288,48 @@ final class ProjectRepository
             $reason = $prefix . ' ' . ($reason ?? '');
         }
 
-        $stmt = $pdo->prepare('
-            UPDATE Project
-            SET status = :status,
-                notes = :notes,
-                updatedAt = NOW()
-            WHERE companyId = :companyId
-              AND id = :projectId
-        ');
+        $pdo->beginTransaction();
 
-        $stmt->execute([
-            'status' => $dbStatus,
-            'notes' => $reason,
-            'companyId' => $companyId,
-            'projectId' => $projectId,
-        ]);
+        try {
+            $stmt = $pdo->prepare('
+                UPDATE Project
+                SET status = :status,
+                    notes = :notes,
+                    updatedAt = NOW()
+                WHERE companyId = :companyId
+                  AND id = :projectId
+            ');
 
-        return $stmt->rowCount() > 0;
+            $stmt->execute([
+                'status' => $dbStatus,
+                'notes' => $reason,
+                'companyId' => $companyId,
+                'projectId' => $projectId,
+            ]);
+
+            $updated = $stmt->rowCount() > 0;
+
+            if ($updated && ($status === 'cancelled' || $status === 'refused_client')) {
+                $quoteRepo = new QuoteRepository();
+                $quoteIds = $quoteRepo->listQuoteIdsLinkedToProject(
+                    $companyId,
+                    $projectId,
+                    (int) ($projectRow['clientId'] ?? 0),
+                    (string) ($projectRow['name'] ?? '')
+                );
+                if ($quoteIds !== []) {
+                    $quoteRepo->refuseQuotesByIds($companyId, $quoteIds);
+                    (new InvoiceRepository())->cancelInvoicesByQuoteIds($companyId, $quoteIds);
+                }
+            }
+
+            $pdo->commit();
+
+            return $updated;
+        } catch (\Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
     }
 
     public function markWaitingPlanning(int $companyId, int $projectId): bool
@@ -339,6 +447,7 @@ final class ProjectRepository
                         ON q.companyId = i.companyId
                        AND q.id = i.quoteId
                     WHERE i.companyId = p.companyId
+                      AND i.status <> \'annulee\'
                       AND (
                           q.projectId = p.id
                           OR (
@@ -355,6 +464,7 @@ final class ProjectRepository
                         ON q.companyId = i.companyId
                        AND q.id = i.quoteId
                     WHERE i.companyId = p.companyId
+                      AND i.status <> \'annulee\'
                       AND (
                           q.projectId = p.id
                           OR (
@@ -371,6 +481,7 @@ final class ProjectRepository
                         ON q.companyId = i.companyId
                        AND q.id = i.quoteId
                     WHERE i.companyId = p.companyId
+                      AND i.status <> \'annulee\'
                       AND (
                           q.projectId = p.id
                           OR (
@@ -387,6 +498,7 @@ final class ProjectRepository
                         ON q.companyId = i.companyId
                        AND q.id = i.quoteId
                     WHERE i.companyId = p.companyId
+                      AND i.status <> \'annulee\'
                       AND (
                           q.projectId = p.id
                           OR (
@@ -411,18 +523,21 @@ final class ProjectRepository
     }
 
     /**
+     * Affaires planifiées dont la période chevauche l’intervalle (vue planning hebdo).
+     *
      * @return array<int, array{
      *   id:int,
      *   name:string,
      *   status:string,
      *   plannedStartDate:?string,
      *   plannedEndDate:?string,
+     *   siteAddress:?string,
      *   siteCity:?string,
-     *   clientName:string,
-     *   teamMembers:string
+     *   sitePostalCode:?string,
+     *   clientName:string
      * }>
      */
-    public function listScheduledWithTeamsForRange(int $companyId, string $rangeStartYmd, string $rangeEndYmd): array
+    public function listScheduledForRange(int $companyId, string $rangeStartYmd, string $rangeEndYmd): array
     {
         $pdo = Connection::pdo();
         $stmt = $pdo->prepare('
@@ -432,22 +547,14 @@ final class ProjectRepository
                 p.status,
                 p.plannedStartDate,
                 p.plannedEndDate,
+                p.siteAddress,
                 p.siteCity,
-                c.name AS clientName,
-                COALESCE(
-                    GROUP_CONCAT(DISTINCT COALESCE(u.fullName, u.email) ORDER BY u.fullName SEPARATOR ", "),
-                    ""
-                ) AS teamMembers
+                p.sitePostalCode,
+                c.name AS clientName
             FROM Project p
             INNER JOIN Client c
                 ON c.id = p.clientId
                AND c.companyId = p.companyId
-            LEFT JOIN ProjectAssignment pa
-                ON pa.projectId = p.id
-               AND pa.companyId = p.companyId
-            LEFT JOIN `User` u
-                ON u.id = pa.userId
-               AND u.companyId = p.companyId
             WHERE p.companyId = :companyId
               AND p.status = \'planned\'
               AND p.plannedStartDate IS NOT NULL
@@ -455,7 +562,6 @@ final class ProjectRepository
               AND LOCATE(\'[STATUS:PLANNED]\', COALESCE(p.notes, \'\')) > 0
               AND p.plannedStartDate <= :rangeEnd
               AND p.plannedEndDate >= :rangeStart
-            GROUP BY p.id, p.name, p.status, p.plannedStartDate, p.plannedEndDate, p.siteCity, c.name
             ORDER BY p.plannedStartDate ASC, p.id ASC
         ');
         $stmt->execute([

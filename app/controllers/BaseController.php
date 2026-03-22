@@ -6,6 +6,7 @@ namespace App\Controllers;
 use Core\Http\Response;
 use Core\View\View;
 use Modules\Companies\Repositories\CompanyRepository;
+use Modules\Platform\Repositories\PackRepository;
 use Modules\Settings\Repositories\SmtpSettingsRepository;
 
 abstract class BaseController
@@ -67,11 +68,46 @@ abstract class BaseController
             }
         }
 
+        $billingLockBanner = null;
+        if (session_status() === PHP_SESSION_ACTIVE && isset($_SESSION['company_id'])) {
+            $sessionCid = (int) $_SESSION['company_id'];
+            $perms = isset($_SESSION['permissions']) && is_array($_SESSION['permissions']) ? $_SESSION['permissions'] : [];
+            if ($sessionCid > 0 && !in_array('platform.company.manage', $perms, true)) {
+                try {
+                    $company = (new CompanyRepository())->findById($sessionCid);
+                    if (is_array($company)) {
+                        $plan = trim((string) ($company['billingPlan'] ?? ''));
+                        $renew = trim((string) ($company['subscriptionRenewsAt'] ?? ''));
+                        if ($plan !== '' && $renew !== '') {
+                            $isFreePlan = false;
+                            foreach ((new PackRepository())->listAll() as $p) {
+                                if (trim((string) ($p['name'] ?? '')) === $plan && (float) ($p['price'] ?? 0) <= 0) {
+                                    $isFreePlan = true;
+                                    break;
+                                }
+                            }
+                            if ($isFreePlan) {
+                                $renewDate = \DateTimeImmutable::createFromFormat('Y-m-d', substr($renew, 0, 10));
+                                if ($renewDate instanceof \DateTimeImmutable && $renewDate < new \DateTimeImmutable('today')) {
+                                    $billingLockBanner = [
+                                        'message' => 'Période gratuite expirée. Accès limité à la facturation jusqu’à activation d’un pack payant.',
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                } catch (\Throwable) {
+                    $billingLockBanner = null;
+                }
+            }
+        }
+
         $dataWithBase = array_merge([
             'basePath' => $basePath,
             'companyName' => $companyName,
             'companyLogoUrl' => $companyLogoUrl,
             'impersonationBanner' => $impersonationBanner,
+            'billingLockBanner' => $billingLockBanner,
         ], $data);
 
         $contentHtml = View::render($viewsRoot . '/' . $viewTemplate, $dataWithBase);

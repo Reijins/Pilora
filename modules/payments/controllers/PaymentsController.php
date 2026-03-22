@@ -40,6 +40,9 @@ final class PaymentsController extends BaseController
         if ($invoice === null) {
             return Response::redirect('invoices?err=Facture%20introuvable');
         }
+        if ((string) ($invoice['status'] ?? '') === 'annulee') {
+            return Response::redirect('invoices?err=Facture%20annul%C3%A9e');
+        }
 
         $total = (float) ($invoice['amountTotal'] ?? 0);
         $paid = (float) ($invoice['amountPaid'] ?? 0);
@@ -85,6 +88,11 @@ final class PaymentsController extends BaseController
 
         if ($amount <= 0) {
             return Response::redirect('payments/new?invoiceId=' . $invoiceId . '&err=Montant%20invalide');
+        }
+
+        $invCheck = (new InvoiceRepository())->findByCompanyIdAndId($userContext->companyId, $invoiceId);
+        if (!is_array($invCheck) || (string) ($invCheck['status'] ?? '') === 'annulee') {
+            return Response::redirect('invoices?err=Facture%20annul%C3%A9e');
         }
 
         $service = new PaymentService(

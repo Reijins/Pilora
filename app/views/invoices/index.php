@@ -53,12 +53,13 @@ use Core\Support\DateFormatter;
                                     <?php
                                         $code = (string) ($inv['status'] ?? '');
                                         $label = $statusLabels[$code] ?? $code;
+                                        $badgeCls = 'inv-badge inv-badge--' . preg_replace('/[^a-z_]/', '', $code);
                                     ?>
                                     <tr>
                                         <td><?= htmlspecialchars((string) ($inv['invoiceNumber'] ?? '—'), ENT_QUOTES, 'UTF-8') ?></td>
                                         <td><?= htmlspecialchars((string) ($inv['title'] ?? '—'), ENT_QUOTES, 'UTF-8') ?></td>
                                         <td><?= htmlspecialchars(DateFormatter::frDate(isset($inv['dueDate']) ? (string) $inv['dueDate'] : null), ENT_QUOTES, 'UTF-8') ?></td>
-                                        <td><span class="badge"><?= htmlspecialchars($label, ENT_QUOTES, 'UTF-8') ?></span></td>
+                                        <td><span class="<?= htmlspecialchars($badgeCls, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($label, ENT_QUOTES, 'UTF-8') ?></span></td>
                                         <td><?= htmlspecialchars((string) ($inv['amountTotal'] ?? '0'), ENT_QUOTES, 'UTF-8') ?> €</td>
                                         <td>
                                             <?php
@@ -66,7 +67,7 @@ use Core\Support\DateFormatter;
                                                 if ($remaining < 0) { $remaining = 0; }
                                                 $hasRemaining = $remaining > 0;
                                             ?>
-                                            <?php if (!empty($canMarkPaid) && !empty($inv['id']) && $hasRemaining): ?>
+                                            <?php if (!empty($canMarkPaid) && !empty($inv['id']) && $hasRemaining && $code !== 'annulee'): ?>
                                                 <a class="link-action" href="<?= htmlspecialchars($basePath . '/payments/new?invoiceId=' . (int) ($inv['id'] ?? 0), ENT_QUOTES, 'UTF-8') ?>">Payer</a>
                                             <?php else: ?>
                                                 <span class="muted"><?= $hasRemaining ? '—' : 'Payée' ?></span>

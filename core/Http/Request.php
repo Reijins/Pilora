@@ -11,6 +11,7 @@ final class Request
         private readonly array $queryParams,
         private readonly array $bodyParams,
         private readonly array $headers,
+        private readonly string $rawBody,
     ) {}
 
     public static function fromGlobals(): self
@@ -60,7 +61,14 @@ final class Request
             queryParams: is_array($queryParams) ? $queryParams : [],
             bodyParams: is_array($bodyParams) ? $bodyParams : [],
             headers: is_array($headers) ? $headers : [],
+            rawBody: is_string($rawBody) ? $rawBody : '',
         );
+    }
+
+    /** Corps brut (ex. vérification signature webhook Stripe). */
+    public function getRawBody(): string
+    {
+        return $this->rawBody;
     }
 
     public function getMethod(): string

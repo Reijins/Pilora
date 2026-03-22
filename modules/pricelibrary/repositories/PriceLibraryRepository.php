@@ -62,5 +62,66 @@ final class PriceLibraryRepository
 
         return (int) $pdo->lastInsertId();
     }
+
+    public function findByCompanyAndId(int $companyId, int $id): ?array
+    {
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            SELECT id, companyId, code, name, description, unitLabel, unitPrice, estimatedTimeMinutes, status
+            FROM PriceLibraryItem
+            WHERE companyId = :companyId AND id = :id
+            LIMIT 1
+        ');
+        $stmt->execute(['companyId' => $companyId, 'id' => $id]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
+    /**
+     * @param array{
+     *   name:string,
+     *   description:?string,
+     *   unitLabel:?string,
+     *   unitPrice:float,
+     *   estimatedTimeMinutes:?int,
+     *   status:string
+     * } $data
+     */
+    public function updateByCompanyAndId(int $companyId, int $id, array $data): void
+    {
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            UPDATE PriceLibraryItem SET
+                name = :name,
+                description = :description,
+                unitLabel = :unitLabel,
+                unitPrice = :unitPrice,
+                estimatedTimeMinutes = :estimatedTimeMinutes,
+                status = :status,
+                updatedAt = NOW()
+            WHERE companyId = :companyId AND id = :id
+        ');
+        $stmt->execute([
+            'companyId' => $companyId,
+            'id' => $id,
+            'name' => $data['name'],
+            'description' => $data['description'],
+            'unitLabel' => $data['unitLabel'],
+            'unitPrice' => round($data['unitPrice'], 2),
+            'estimatedTimeMinutes' => $data['estimatedTimeMinutes'],
+            'status' => $data['status'] === 'inactive' ? 'inactive' : 'active',
+        ]);
+    }
+
+    public function deleteByCompanyAndId(int $companyId, int $id): bool
+    {
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            DELETE FROM PriceLibraryItem
+            WHERE companyId = :companyId AND id = :id AND status = "inactive"
+        ');
+        $stmt->execute(['companyId' => $companyId, 'id' => $id]);
+        return $stmt->rowCount() > 0;
+    }
 }
 

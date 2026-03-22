@@ -54,6 +54,8 @@ final class QuoteDeliveryService
             throw new \RuntimeException('Email expéditeur SMTP manquant.');
         }
 
+        $mail->CharSet = PHPMailer::CHARSET_UTF8;
+        $mail->Encoding = PHPMailer::ENCODING_QUOTED_PRINTABLE;
         $mail->setFrom($fromEmail, $fromName);
         $mail->addAddress($toEmail);
         $mail->Subject = $subject;
@@ -91,6 +93,8 @@ final class QuoteDeliveryService
         if ($fromEmail === '') {
             throw new \RuntimeException('Email expéditeur SMTP manquant.');
         }
+        $mail->CharSet = PHPMailer::CHARSET_UTF8;
+        $mail->Encoding = PHPMailer::ENCODING_QUOTED_PRINTABLE;
         $mail->setFrom($fromEmail, $fromName);
         $mail->addAddress($toEmail);
         $mail->Subject = $subject;

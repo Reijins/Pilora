@@ -44,12 +44,6 @@ declare(strict_types=1);
                                         value="<?= htmlspecialchars((string) ($sourceQuote['title'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                                     >
                                 </div>
-                                <div class="field affair-field-full">
-                                    <label class="checkbox-item" style="padding:0; margin:0;">
-                                        <input type="checkbox" name="send_quote_email" value="1" checked>
-                                        <span>Envoyer le devis par email</span>
-                                    </label>
-                                </div>
                             </div>
                         </section>
 
@@ -69,17 +63,32 @@ declare(strict_types=1);
                                         <option value="<?= htmlspecialchars($nm, ENT_QUOTES, 'UTF-8') ?>"></option>
                                     <?php endforeach; ?>
                                 </datalist>
+                                <?php
+                                    $unitLabelByLibName = [];
+                                    foreach (($priceItems ?? []) as $pi) {
+                                        $ln = trim((string) ($pi['name'] ?? ''));
+                                        if ($ln === '') {
+                                            continue;
+                                        }
+                                        $k = function_exists('mb_strtolower') ? mb_strtolower($ln, 'UTF-8') : strtolower($ln);
+                                        if (!isset($unitLabelByLibName[$k])) {
+                                            $ul = trim((string) ($pi['unitLabel'] ?? ''));
+                                            $unitLabelByLibName[$k] = $ul;
+                                        }
+                                    }
+                                ?>
 
                                 <div class="affair-field-full">
                                     <div style="overflow-x:visible;">
                                         <table class="table" id="affair-quote-items-table" style="table-layout:fixed; width:100%;">
                                             <thead>
                                             <tr>
-                                                <th style="width:50%;">Prestation</th>
-                                                <th style="width:9%;">Qté</th>
-                                                <th style="width:15%;">Prix (€)</th>
-                                                <th style="width:12%;">Temps (min)</th>
-                                                <th style="width:9%;">Biblio</th>
+                                                <th style="width:44%;">Prestation</th>
+                                                <th style="width:8%;">Qté</th>
+                                                <th style="width:10%;">Unité</th>
+                                                <th style="width:14%;">Prix unitaire HT (€)</th>
+                                                <th style="width:10%;">Temps (h)</th>
+                                                <th style="width:8%;">Biblio</th>
                                                 <th style="width:5%;"></th>
                                             </tr>
                                             </thead>
@@ -93,14 +102,27 @@ declare(strict_types=1);
                                             ]];
                                             ?>
                                             <?php foreach ($rows as $idx => $row): ?>
+                                                <?php
+                                                $em = $row['estimatedTimeMinutes'] ?? null;
+                                                $hoursVal = '';
+                                                if ($em !== null && $em !== '' && is_numeric($em)) {
+                                                    $hoursVal = (string) (int) round((float) $em / 60.0);
+                                                }
+                                                $rowDesc = trim((string) ($row['description'] ?? ''));
+                                                $rowUnitKey = $rowDesc !== '' ? (function_exists('mb_strtolower') ? mb_strtolower($rowDesc, 'UTF-8') : strtolower($rowDesc)) : '';
+                                                $rowUnitDisp = ($rowUnitKey !== '' && ($unitLabelByLibName[$rowUnitKey] ?? '') !== '')
+                                                    ? (string) $unitLabelByLibName[$rowUnitKey]
+                                                    : '—';
+                                                ?>
                                                 <tr class="affair-quote-item-row" data-row-index="<?= (int) $idx ?>">
-                                                    <td style="width:50%; min-width:240px;">
+                                                    <td style="width:44%; min-width:200px;">
                                                         <input class="input affair-item-name-input" name="item_name[]" type="text" list="affairPriceLibraryNames" placeholder="Nom de la prestation" required style="width:100%;" value="<?= htmlspecialchars((string) ($row['description'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                                                         <input type="hidden" class="affair-item-price-item-id" name="item_price_item_id[]" value="">
                                                     </td>
-                                                    <td style="width:9%;"><input class="input affair-item-quantity" name="item_quantity[]" type="number" step="0.01" value="<?= htmlspecialchars((string) ($row['quantity'] ?? 1), ENT_QUOTES, 'UTF-8') ?>" style="width:100%; max-width:none;"></td>
-                                                    <td style="width:15%;"><input class="input affair-item-unit-price" name="item_unit_price[]" type="number" step="0.01" value="<?= htmlspecialchars((string) ($row['unitPrice'] ?? 0), ENT_QUOTES, 'UTF-8') ?>" style="width:100%; max-width:none;"></td>
-                                                    <td style="width:12%;"><input class="input affair-item-est-time" name="item_estimated_time_minutes[]" type="number" step="1" value="<?= htmlspecialchars((string) ($row['estimatedTimeMinutes'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" style="width:100%; max-width:none;"></td>
+                                                    <td style="width:8%;"><input class="input affair-item-quantity" name="item_quantity[]" type="number" step="1" min="0" value="<?= htmlspecialchars((string) ($row['quantity'] ?? 1), ENT_QUOTES, 'UTF-8') ?>" style="width:100%; max-width:none;"></td>
+                                                    <td style="width:10%;" class="muted affair-item-unit-cell"><span class="affair-item-unit-label"><?= htmlspecialchars($rowUnitDisp, ENT_QUOTES, 'UTF-8') ?></span></td>
+                                                    <td style="width:14%;"><input class="input affair-item-unit-price" name="item_unit_price[]" type="number" step="0.01" value="<?= htmlspecialchars((string) ($row['unitPrice'] ?? 0), ENT_QUOTES, 'UTF-8') ?>" style="width:100%; max-width:none;"></td>
+                                                    <td style="width:10%;"><input class="input affair-item-est-time" name="item_estimated_time_hours[]" type="number" step="1" min="0" placeholder="h" value="<?= htmlspecialchars($hoursVal, ENT_QUOTES, 'UTF-8') ?>" style="width:100%; max-width:none;"></td>
                                                     <td>
                                                         <label class="checkbox-item" style="padding:0; margin:0; justify-content:center;">
                                                             <input type="checkbox" class="affair-item-save-library" name="item_save_to_library[<?= (int) $idx ?>]" value="1">
@@ -118,6 +140,20 @@ declare(strict_types=1);
 
                                 <div class="affair-field-full">
                                     <button class="btn btn-secondary" id="affair-btn-add-row" type="button">Ajouter une prestation</button>
+                                </div>
+                                <?php $vatR = isset($quoteVatRate) && is_numeric($quoteVatRate) ? (float) $quoteVatRate : 20.0; ?>
+                                <div class="affair-field-full affair-quote-totals" style="margin-top:12px; padding:14px 16px; border:1px solid var(--border); border-radius:12px; background:var(--app-bg);">
+                                    <div style="display:flex; flex-wrap:wrap; gap:12px 28px; align-items:baseline; font-size:15px;">
+                                        <span><strong>Total devis HT</strong> : <span id="affair-total-ht">0,00</span> €</span>
+                                        <span><strong>Total devis TTC</strong> : <span id="affair-total-ttc">0,00</span> €</span>
+                                        <span class="muted" style="font-size:13px;">TVA <?= htmlspecialchars((string) $vatR, ENT_QUOTES, 'UTF-8') ?> % (paramètres société)</span>
+                                    </div>
+                                </div>
+                                <div class="field affair-field-full" style="margin-top:12px;">
+                                    <label class="checkbox-item" style="padding:0; margin:0;">
+                                        <input type="checkbox" id="send_quote_email" name="send_quote_email" value="1" checked>
+                                        <span>Envoyer le devis par email</span>
+                                    </label>
                                 </div>
                             </div>
                         </section>
@@ -140,10 +176,12 @@ declare(strict_types=1);
                                 'id' => (int) ($it['id'] ?? 0),
                                 'name' => (string) ($it['name'] ?? ''),
                                 'description' => (string) ($it['description'] ?? ''),
+                                'unitLabel' => isset($it['unitLabel']) && (string) $it['unitLabel'] !== '' ? (string) $it['unitLabel'] : null,
                                 'unitPrice' => (float) ($it['unitPrice'] ?? 0),
                                 'estimatedTimeMinutes' => $it['estimatedTimeMinutes'] ?? null,
                             ];
                         }, ($priceItems ?? [])), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+                        var vatRate = <?= json_encode(isset($quoteVatRate) && is_numeric($quoteVatRate) ? (float) $quoteVatRate : 20.0) ?>;
 
                         function normalize(s) { return (s || '').toString().trim().toLowerCase(); }
                         var byName = {};
@@ -151,6 +189,51 @@ declare(strict_types=1);
                             var nm = normalize(it.name);
                             if (nm && !byName[nm]) byName[nm] = it;
                         });
+
+                        function minutesToHoursStr(m) {
+                            if (m === null || m === undefined || m === '') return '';
+                            var h = Number(m) / 60;
+                            if (isNaN(h)) return '';
+                            return String(Math.round(h));
+                        }
+
+                        function formatMoney(n) {
+                            var x = Math.round(Number(n) * 100) / 100;
+                            if (isNaN(x)) x = 0;
+                            return x.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        }
+
+                        function setRowUnitLabel(row, label) {
+                            var el = row.querySelector('.affair-item-unit-label');
+                            if (!el) return;
+                            var t = (label !== null && label !== undefined && String(label).trim() !== '') ? String(label).trim() : '—';
+                            el.textContent = t;
+                        }
+
+                        function updateUnitLabelFromName(row) {
+                            var nameInput = row.querySelector('.affair-item-name-input');
+                            if (!nameInput) return;
+                            var match = byName[normalize(nameInput.value || '')] || null;
+                            setRowUnitLabel(row, match ? match.unitLabel : null);
+                        }
+
+                        function recalcTotals() {
+                            var htEl = document.getElementById('affair-total-ht');
+                            var ttcEl = document.getElementById('affair-total-ttc');
+                            if (!htEl || !ttcEl) return;
+                            var rows = body.querySelectorAll('.affair-quote-item-row');
+                            var ht = 0;
+                            rows.forEach(function (row) {
+                                var qIn = row.querySelector('.affair-item-quantity');
+                                var pIn = row.querySelector('.affair-item-unit-price');
+                                var q = parseFloat(qIn && qIn.value ? qIn.value : '0');
+                                var p = parseFloat(pIn && pIn.value ? pIn.value : '0');
+                                if (!isNaN(q) && !isNaN(p)) ht += q * p;
+                            });
+                            var ttc = ht * (1 + (Number(vatRate) || 0) / 100);
+                            htEl.textContent = formatMoney(ht);
+                            ttcEl.textContent = formatMoney(ttc);
+                        }
 
                         function syncRowFromName(row) {
                             var nameInput = row.querySelector('.affair-item-name-input');
@@ -163,21 +246,19 @@ declare(strict_types=1);
                             var match = byName[normalize(nameInput.value || '')] || null;
                             if (match) {
                                 hiddenId.value = String(match.id);
-                                var currentPrice = parseFloat(unitPriceInput.value || '0');
-                                if (!unitPriceInput.value || isNaN(currentPrice) || currentPrice <= 0) {
-                                    unitPriceInput.value = String(match.unitPrice);
+                                unitPriceInput.value = String(match.unitPrice);
+                                if (match.estimatedTimeMinutes !== null && match.estimatedTimeMinutes !== undefined) {
+                                    timeInput.value = minutesToHoursStr(match.estimatedTimeMinutes);
+                                } else {
+                                    timeInput.value = '';
                                 }
-                                var tRaw = timeInput.value || '';
-                                var t = tRaw === '' ? NaN : parseFloat(tRaw);
-                                if (tRaw === '' || isNaN(t)) {
-                                    if (match.estimatedTimeMinutes !== null && match.estimatedTimeMinutes !== undefined) {
-                                        timeInput.value = String(match.estimatedTimeMinutes);
-                                    }
-                                }
+                                setRowUnitLabel(row, match.unitLabel);
                                 if (saveCb) saveCb.checked = false;
                             } else {
                                 hiddenId.value = '';
+                                setRowUnitLabel(row, null);
                             }
+                            recalcTotals();
                         }
 
                         function reindexRows() {
@@ -195,14 +276,20 @@ declare(strict_types=1);
                             if (nameInput) {
                                 nameInput.addEventListener('change', function () { syncRowFromName(row); });
                                 nameInput.addEventListener('blur', function () { syncRowFromName(row); });
+                                nameInput.addEventListener('input', function () { updateUnitLabelFromName(row); });
                             }
                             if (removeBtn) {
                                 removeBtn.addEventListener('click', function () {
                                     if (body.children.length <= 1) return;
                                     row.remove();
                                     reindexRows();
+                                    recalcTotals();
                                 });
                             }
+                            ['.affair-item-quantity', '.affair-item-unit-price'].forEach(function (sel) {
+                                var el = row.querySelector(sel);
+                                if (el) el.addEventListener('input', recalcTotals);
+                            });
                         }
 
                         btnAdd.addEventListener('click', function () {
@@ -215,13 +302,17 @@ declare(strict_types=1);
                                 else if (input.classList.contains('affair-item-unit-price')) input.value = '0';
                                 else input.value = '';
                             });
+                            var uLab = clone.querySelector('.affair-item-unit-label');
+                            if (uLab) uLab.textContent = '—';
                             body.appendChild(clone);
                             reindexRows();
                             bindRow(clone);
+                            recalcTotals();
                         });
 
                         body.querySelectorAll('.affair-quote-item-row').forEach(bindRow);
                         reindexRows();
+                        recalcTotals();
                     })();
                 </script>
             <?php endif; ?>

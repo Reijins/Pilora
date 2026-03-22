@@ -26,28 +26,9 @@ use Core\Support\DateFormatter;
                 <?php $basePath = isset($basePath) && is_string($basePath) ? $basePath : ''; ?>
 
                 <?php if (!empty($canRequest)): ?>
-                    <h3 style="margin:0 0 10px;">Nouvelle demande</h3>
-                    <form method="POST" action="<?= htmlspecialchars($basePath . '/hr/leave/create', ENT_QUOTES, 'UTF-8') ?>" class="form" style="max-width:720px;">
-                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken ?? '', ENT_QUOTES, 'UTF-8') ?>">
-
-                        <label class="label" for="type">Type</label>
-                        <select class="input" id="type" name="type">
-                            <option value="conges">Congés</option>
-                            <option value="absence">Absence</option>
-                        </select>
-
-                        <label class="label" for="start_date">Date de début</label>
-                        <input class="input" id="start_date" name="start_date" type="date" required>
-
-                        <label class="label" for="end_date">Date de fin</label>
-                        <input class="input" id="end_date" name="end_date" type="date" required>
-
-                        <label class="label" for="reason">Motif</label>
-                        <input class="input" id="reason" name="reason" type="text" placeholder="Optionnel">
-
-                        <button class="btn btn-primary" type="submit">Envoyer la demande</button>
-                    </form>
-                    <div style="height:18px;"></div>
+                    <div style="margin:0 0 14px;">
+                        <a class="btn btn-primary" href="<?= htmlspecialchars($basePath . '/hr/leave/new', ENT_QUOTES, 'UTF-8') ?>">Nouvelle demande</a>
+                    </div>
                 <?php endif; ?>
 
                 <h3 style="margin:0 0 10px;">Demandes</h3>

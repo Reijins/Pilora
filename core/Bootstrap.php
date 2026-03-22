@@ -9,6 +9,7 @@ use Core\Context\UserContext;
 use Core\Http\Request;
 use Core\Http\Response;
 use Core\Routing\Router;
+use Modules\Companies\Repositories\CompanyRepository;
 use Modules\Dashboard\Controllers\DashboardController;
 use Modules\Auth\Controllers\AuthController;
 use Modules\Clients\Controllers\ClientsController;
@@ -16,12 +17,14 @@ use Modules\Contacts\Controllers\ContactsController;
 use Modules\Hr\Controllers\HrController;
 use Modules\Settings\Controllers\SettingsController;
 use Modules\Invoices\Controllers\InvoicesController;
+use Modules\Invoices\Controllers\PublicInvoiceController;
 use Modules\Payments\Controllers\PaymentsController;
 use Modules\Projects\Controllers\ProjectsController;
 use Modules\Planning\Controllers\PlanningController;
 use Modules\Projects\Controllers\ProjectReportsController;
 use Modules\Projects\Controllers\ProjectPhotosController;
 use Modules\PriceLibrary\Controllers\PriceLibraryController;
+use Modules\Platform\Repositories\PackRepository;
 use Modules\Platform\Controllers\PlatformController;
 
 final class Bootstrap
@@ -50,6 +53,12 @@ final class Bootstrap
         }
 
         $userContext = AuthenticatedUserContextFactory::fromSession();
+
+        $billingLockRedirect = $this->enforceBillingRestriction($request, $userContext);
+        if ($billingLockRedirect instanceof Response) {
+            $billingLockRedirect->send();
+            return;
+        }
 
         $result = $handler($request, $userContext);
         if ($result instanceof Response) {
@@ -163,12 +172,24 @@ final class Bootstrap
             return (new InvoicesController())->sendFromProject($request, $userContext);
         });
 
+        $router->post('/invoices/resend', function (Request $request, UserContext $userContext): Response {
+            return (new InvoicesController())->resendFromProject($request, $userContext);
+        });
+
+        $router->post('/invoices/payment/manual', function (Request $request, UserContext $userContext): Response {
+            return (new InvoicesController())->recordManualPaymentFromProject($request, $userContext);
+        });
+
         $router->get('/payments/new', function (Request $request, UserContext $userContext): Response {
             return (new PaymentsController())->new($request, $userContext);
         });
 
         $router->post('/payments/create', function (Request $request, UserContext $userContext): Response {
             return (new PaymentsController())->create($request, $userContext);
+        });
+
+        $router->get('/projects', function (Request $request, UserContext $userContext): Response {
+            return (new ProjectsController())->index($request, $userContext);
         });
 
         $router->get('/projects/show', function (Request $request, UserContext $userContext): Response {
@@ -189,14 +210,6 @@ final class Bootstrap
 
         $router->get('/projects/quotes/version/new', function (Request $request, UserContext $userContext): Response {
             return (new ProjectsController())->newQuoteVersion($request, $userContext);
-        });
-
-        $router->get('/projects/assign', function (Request $request, UserContext $userContext): Response {
-            return (new ProjectsController())->assign($request, $userContext);
-        });
-
-        $router->post('/projects/assign/save', function (Request $request, UserContext $userContext): Response {
-            return (new ProjectsController())->assignSave($request, $userContext);
         });
 
         $router->post('/projects/status/update', function (Request $request, UserContext $userContext): Response {
@@ -231,6 +244,18 @@ final class Bootstrap
             return (new ProjectsController())->downloadSignedQuotePdf($request, $userContext);
         });
 
+        $router->get('/invoice/pay', function (Request $request, UserContext $userContext): Response {
+            return (new PublicInvoiceController())->pay($request, $userContext);
+        });
+
+        $router->post('/invoice/pay/stripe', function (Request $request, UserContext $userContext): Response {
+            return (new PublicInvoiceController())->stripeCheckout($request, $userContext);
+        });
+
+        $router->post('/webhooks/stripe', function (Request $request, UserContext $userContext): Response {
+            return (new PublicInvoiceController())->stripeWebhook($request, $userContext);
+        });
+
         $router->get('/project-reports', function (Request $request, UserContext $userContext): Response {
             return (new ProjectReportsController())->index($request, $userContext);
         });
@@ -251,8 +276,28 @@ final class Bootstrap
             return (new PriceLibraryController())->index($request, $userContext);
         });
 
+        $router->get('/price-library/new', function (Request $request, UserContext $userContext): Response {
+            return (new PriceLibraryController())->new($request, $userContext);
+        });
+
         $router->post('/price-library/create', function (Request $request, UserContext $userContext): Response {
             return (new PriceLibraryController())->create($request, $userContext);
+        });
+
+        $router->get('/price-library/edit', function (Request $request, UserContext $userContext): Response {
+            return (new PriceLibraryController())->edit($request, $userContext);
+        });
+
+        $router->post('/price-library/update', function (Request $request, UserContext $userContext): Response {
+            return (new PriceLibraryController())->update($request, $userContext);
+        });
+
+        $router->post('/price-library/delete', function (Request $request, UserContext $userContext): Response {
+            return (new PriceLibraryController())->delete($request, $userContext);
+        });
+        
+        $router->post('/price-library/deactivate', function (Request $request, UserContext $userContext): Response {
+            return (new PriceLibraryController())->deactivate($request, $userContext);
         });
 
         $router->get('/planning', function (Request $request, UserContext $userContext): Response {
@@ -265,6 +310,10 @@ final class Bootstrap
 
         $router->get('/hr', function (Request $request, UserContext $userContext): Response {
             return (new HrController())->index($request, $userContext);
+        });
+
+        $router->get('/hr/leave/new', function (Request $request, UserContext $userContext): Response {
+            return (new HrController())->newLeaveRequest($request, $userContext);
         });
 
         $router->post('/hr/leave/create', function (Request $request, UserContext $userContext): Response {
@@ -291,8 +340,16 @@ final class Bootstrap
             return (new SettingsController())->testSmtp($request, $userContext);
         });
 
+        $router->post('/settings/billing/subscribe', function (Request $request, UserContext $userContext): Response {
+            return (new SettingsController())->subscribeBilling($request, $userContext);
+        });
+
         $router->get('/platform/companies', function (Request $request, UserContext $userContext): Response {
             return (new PlatformController())->companiesIndex($request, $userContext);
+        });
+
+        $router->post('/platform/settings/billing/save', function (Request $request, UserContext $userContext): Response {
+            return (new PlatformController())->platformBillingSave($request, $userContext);
         });
 
         $router->get('/platform/companies/new', function (Request $request, UserContext $userContext): Response {
@@ -315,6 +372,53 @@ final class Bootstrap
             return (new PlatformController())->billingUpdate($request, $userContext);
         });
 
+        $router->post('/platform/packs/upsert', function (Request $request, UserContext $userContext): Response {
+            return (new PlatformController())->packsUpsert($request, $userContext);
+        });
+
+        $router->get('/platform/packs/new', function (Request $request, UserContext $userContext): Response {
+            return (new PlatformController())->packsNew($request, $userContext);
+        });
+
+        $router->post('/platform/packs/delete', function (Request $request, UserContext $userContext): Response {
+            return (new PlatformController())->packsDelete($request, $userContext);
+        });
+
+        $router->post('/platform/companies/users/create', function (Request $request, UserContext $userContext): Response {
+            return (new PlatformController())->companyUserCreate($request, $userContext);
+        });
+        $router->get('/platform/companies/users/new', function (Request $request, UserContext $userContext): Response {
+            return (new PlatformController())->companyUserNew($request, $userContext);
+        });
+
+        $router->post('/platform/companies/users/delete', function (Request $request, UserContext $userContext): Response {
+            return (new PlatformController())->companyUserDelete($request, $userContext);
+        });
+
+        $router->post('/platform/companies/users/update', function (Request $request, UserContext $userContext): Response {
+            return (new PlatformController())->companyUserUpdate($request, $userContext);
+        });
+
+        $router->post('/platform/users/create', function (Request $request, UserContext $userContext): Response {
+            return (new PlatformController())->platformUserCreate($request, $userContext);
+        });
+
+        $router->get('/platform/users/new', function (Request $request, UserContext $userContext): Response {
+            return (new PlatformController())->platformUserNew($request, $userContext);
+        });
+
+        $router->post('/platform/users/update', function (Request $request, UserContext $userContext): Response {
+            return (new PlatformController())->platformUserUpdate($request, $userContext);
+        });
+
+        $router->get('/platform/users/edit', function (Request $request, UserContext $userContext): Response {
+            return (new PlatformController())->platformUserEdit($request, $userContext);
+        });
+
+        $router->post('/platform/users/delete', function (Request $request, UserContext $userContext): Response {
+            return (new PlatformController())->platformUserDelete($request, $userContext);
+        });
+
         $router->get('/platform/audit', function (Request $request, UserContext $userContext): Response {
             return (new PlatformController())->auditIndex($request, $userContext);
         });
@@ -326,6 +430,61 @@ final class Bootstrap
         $router->post('/platform/impersonate/stop', function (Request $request, UserContext $userContext): Response {
             return (new PlatformController())->impersonateStop($request, $userContext);
         });
+    }
+
+    private function enforceBillingRestriction(Request $request, UserContext $userContext): ?Response
+    {
+        if ($userContext->userId === null || $userContext->companyId === null) {
+            return null;
+        }
+        // Les comptes plateforme ne sont pas bloqués par ce tunnel.
+        if (in_array('platform.company.manage', $userContext->permissions, true)) {
+            return null;
+        }
+
+        $path = $request->getPath();
+        $allowedPaths = ['/logout', '/settings', '/settings/billing/subscribe'];
+        if (in_array($path, $allowedPaths, true)) {
+            if ($path !== '/settings') {
+                return null;
+            }
+            $tab = (string) $request->getQueryParam('tab', '');
+            if ($tab === 'billing') {
+                return null;
+            }
+        }
+
+        $company = (new CompanyRepository())->findById((int) $userContext->companyId);
+        if (!is_array($company)) {
+            return null;
+        }
+        $plan = trim((string) ($company['billingPlan'] ?? ''));
+        $renew = trim((string) ($company['subscriptionRenewsAt'] ?? ''));
+        if ($plan === '' || $renew === '') {
+            return null;
+        }
+
+        $isFreePlan = false;
+        foreach ((new PackRepository())->listAll() as $p) {
+            if (trim((string) ($p['name'] ?? '')) === $plan && (float) ($p['price'] ?? 0) <= 0) {
+                $isFreePlan = true;
+                break;
+            }
+        }
+        if (!$isFreePlan) {
+            return null;
+        }
+
+        $renewDate = \DateTimeImmutable::createFromFormat('Y-m-d', substr($renew, 0, 10));
+        if (!$renewDate) {
+            return null;
+        }
+        $today = new \DateTimeImmutable('today');
+        if ($renewDate >= $today) {
+            return null;
+        }
+
+        return Response::redirect('settings?tab=billing&err=Periode%20gratuite%20expiree.%20Choisissez%20un%20abonnement%20payant');
     }
 }
 

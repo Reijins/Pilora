@@ -1,0 +1,13 @@
+# Dépendances PHP (composer install)
+/vendor/
+
+# Variables d'environnement (secrets)
+.env
+.env.local
+.env.*.local
+
+# Paramètres SMTP et secrets par société (fichiers générés localement)
+storage/settings/smtp_company_*.json
+
+# Logs locaux
+storage/logs/*.log

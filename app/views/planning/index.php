@@ -39,10 +39,24 @@ use Core\Support\DateFormatter;
                                     <?php $rows = is_array($projectsByDay[$dayYmd] ?? null) ? $projectsByDay[$dayYmd] : []; ?>
                                     <?php if (!empty($rows)): ?>
                                         <?php foreach ($rows as $r): ?>
+                                            <?php
+                                                $siteAddr = trim((string) ($r['siteAddress'] ?? ''));
+                                                $siteCp = trim((string) ($r['sitePostalCode'] ?? ''));
+                                                $siteCity = trim((string) ($r['siteCity'] ?? ''));
+                                                $lineCity = trim($siteCp . ' ' . $siteCity);
+                                                $addrParts = [];
+                                                if ($siteAddr !== '') {
+                                                    $addrParts[] = $siteAddr;
+                                                }
+                                                if ($lineCity !== '') {
+                                                    $addrParts[] = $lineCity;
+                                                }
+                                                $addressText = $addrParts !== [] ? implode(', ', $addrParts) : '—';
+                                            ?>
                                             <a href="<?= htmlspecialchars($basePath . '/projects/show?projectId=' . (int) ($r['id'] ?? 0), ENT_QUOTES, 'UTF-8') ?>" style="display:block; border:1px solid #dbe7ef; border-radius:10px; padding:8px; background:#fff; word-break:break-word; text-decoration:none; color:inherit;">
+                                                <div class="muted" style="font-size:12px; margin-bottom:2px;">Client : <strong style="color:inherit; font-weight:700;"><?= htmlspecialchars((string) ($r['clientName'] ?? '—'), ENT_QUOTES, 'UTF-8') ?></strong></div>
                                                 <div style="font-weight:700; margin-bottom:4px;"><?= htmlspecialchars((string) ($r['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></div>
-                                                <div class="muted" style="font-size:12px;">Client: <?= htmlspecialchars((string) ($r['clientName'] ?? ''), ENT_QUOTES, 'UTF-8') ?></div>
-                                                <div class="muted" style="font-size:12px;">Équipe: <?= htmlspecialchars((string) (($r['teamMembers'] ?? '') !== '' ? $r['teamMembers'] : 'Aucune équipe affectée'), ENT_QUOTES, 'UTF-8') ?></div>
+                                                <div class="muted" style="font-size:12px;">Adresse : <?= htmlspecialchars($addressText, ENT_QUOTES, 'UTF-8') ?></div>
                                             </a>
                                         <?php endforeach; ?>
                                     <?php else: ?>

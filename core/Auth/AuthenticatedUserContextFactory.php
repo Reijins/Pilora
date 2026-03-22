@@ -93,6 +93,17 @@ final class AuthenticatedUserContextFactory
             $target = (int) $_SESSION['impersonate_target_company_id'];
             if ($target > 0 && in_array('platform.impersonate.start', $permissions, true)) {
                 $effectiveCompanyId = $target;
+                // En impersonation, le compte plateforme n’a pas de UserRole sur le tenant cible :
+                // on fusionne les permissions tenant de la société impersonnée pour accéder au module ERP.
+                try {
+                    $tenantCodes = (new RbacRepository())->listTenantPermissionCodesForCompany($target);
+                    if ($tenantCodes !== []) {
+                        $permissions = array_values(array_unique(array_merge($permissions, $tenantCodes)));
+                        sort($permissions);
+                    }
+                } catch (\Throwable) {
+                    // ignore
+                }
             }
         }
 

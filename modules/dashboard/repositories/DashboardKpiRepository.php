@@ -35,7 +35,7 @@ final class DashboardKpiRepository
             WHERE companyId = :companyId
               AND dueDate < CURDATE()
               AND (COALESCE(amountTotal, 0) - COALESCE(amountPaid, 0)) > 0.01
-              AND status NOT IN ("payee")
+              AND status NOT IN ("payee", "annulee")
         ');
         $stmt->execute(['companyId' => $companyId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);

@@ -17,13 +17,20 @@ if ($check !== false && $check->rowCount() === 0) {
         ALTER TABLE Company
             ADD COLUMN billingPlan VARCHAR(80) NULL AFTER status,
             ADD COLUMN billingStatus ENUM(\'trial\',\'active\',\'past_due\',\'cancelled\') NULL AFTER billingPlan,
-            ADD COLUMN maxSeats INT UNSIGNED NULL AFTER billingStatus,
+            ADD COLUMN billingCycle ENUM(\'monthly\',\'annual\') NULL AFTER billingStatus,
+            ADD COLUMN maxSeats INT UNSIGNED NULL AFTER billingCycle,
             ADD COLUMN subscriptionRenewsAt DATE NULL AFTER maxSeats,
             ADD COLUMN externalBillingRef VARCHAR(120) NULL AFTER subscriptionRenewsAt
     ');
     echo "Migration: colonnes billing Company OK\n";
 } else {
     echo "Migration: colonnes billing Company déjà présentes\n";
+}
+
+$checkCycle = $pdo->query("SHOW COLUMNS FROM Company LIKE 'billingCycle'");
+if ($checkCycle !== false && $checkCycle->rowCount() === 0) {
+    $pdo->exec("ALTER TABLE Company ADD COLUMN billingCycle ENUM('monthly','annual') NULL AFTER billingStatus");
+    echo "Migration: colonne billingCycle ajoutée\n";
 }
 
 $stmt = $pdo->query("SHOW TABLES LIKE 'AuditLog'");

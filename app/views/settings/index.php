@@ -29,6 +29,7 @@ declare(strict_types=1);
                     <a class="btn btn-secondary settings-tab <?= $currentTab === 'general' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($basePath . '/settings?tab=general', ENT_QUOTES, 'UTF-8') ?>">Paramètres généraux</a>
                     <a class="btn btn-secondary settings-tab <?= $currentTab === 'smtp' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($basePath . '/settings?tab=smtp', ENT_QUOTES, 'UTF-8') ?>">SMTP</a>
                     <a class="btn btn-secondary settings-tab <?= $currentTab === 'email_templates' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($basePath . '/settings?tab=email_templates', ENT_QUOTES, 'UTF-8') ?>">Modèles emails</a>
+                    <a class="btn btn-secondary settings-tab <?= $currentTab === 'billing' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($basePath . '/settings?tab=billing', ENT_QUOTES, 'UTF-8') ?>">Facturation</a>
                     <a class="btn btn-secondary settings-tab <?= $currentTab === 'users' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($basePath . '/settings?tab=users', ENT_QUOTES, 'UTF-8') ?>">Utilisateurs</a>
                     <a class="btn btn-secondary settings-tab <?= $currentTab === 'rbac' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($basePath . '/settings?tab=rbac', ENT_QUOTES, 'UTF-8') ?>">Rôles & permissions</a>
                 </div>
@@ -38,10 +39,16 @@ declare(strict_types=1);
                         <h3 style="margin:0 0 10px;">Paramètres généraux</h3>
                         <?php $smtp = is_array($smtpSettings ?? null) ? $smtpSettings : []; ?>
                         <?php $logoPath = trim((string) ($smtp['company_logo_path'] ?? '')); ?>
+                        <?php $companyRow = is_array($company ?? null) ? $company : []; ?>
                         <form method="POST" action="<?= htmlspecialchars($basePath . '/settings/smtp/update', ENT_QUOTES, 'UTF-8') ?>" class="form" style="max-width:none;" enctype="multipart/form-data">
                             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken ?? '', ENT_QUOTES, 'UTF-8') ?>">
                             <input type="hidden" name="settings_tab" value="general">
                             <div class="contact-form-grid">
+                                <div class="field contact-field-full">
+                                    <label class="label" for="company_name">Nom de l’entreprise</label>
+                                    <input class="input" id="company_name" name="company_name" type="text" maxlength="255" required value="<?= htmlspecialchars((string) ($companyRow['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                    <p class="muted" style="margin:4px 0 0;">Ce nom apparaît dans la plateforme (liste des sociétés) et dans l’application.</p>
+                                </div>
                                 <div class="field contact-field-full">
                                     <label class="label" for="company_logo">Logo entreprise (navbar)</label>
                                     <?php if ($logoPath !== ''): ?>
@@ -62,6 +69,31 @@ declare(strict_types=1);
                                         <option value="0" <?= (string) ($smtp['proof_required'] ?? '0') === '0' ? 'selected' : '' ?>>Non</option>
                                         <option value="1" <?= (string) ($smtp['proof_required'] ?? '0') === '1' ? 'selected' : '' ?>>Oui</option>
                                     </select>
+                                </div>
+                                <div class="field contact-field-full">
+                                    <label class="label">Paiement en ligne (Stripe)</label>
+                                    <label style="display:flex;align-items:center;gap:8px;font-weight:400;">
+                                        <input
+                                            type="checkbox"
+                                            name="stripe_online_payment_enabled"
+                                            value="1"
+                                            <?= (string) ($smtp['stripe_online_payment_enabled'] ?? '0') === '1' ? 'checked' : '' ?>
+                                        >
+                                        Activer le paiement par carte sur la page publique de facture (<code>/invoice/pay</code>)
+                                    </label>
+                                    <p class="muted" style="margin:6px 0 0;">La clé secrète reste stockée dans les paramètres de l’entreprise (fichier sécurisé côté serveur), pas dans le code.</p>
+                                </div>
+                                <div class="field contact-field-full">
+                                    <label class="label" for="stripe_secret_key">Clé secrète Stripe</label>
+                                    <input
+                                        class="input"
+                                        id="stripe_secret_key"
+                                        name="stripe_secret_key"
+                                        type="password"
+                                        autocomplete="off"
+                                        placeholder="<?= trim((string) ($smtp['stripe_secret_key'] ?? '')) !== '' ? 'Laisser vide pour conserver la clé enregistrée' : 'sk_live_… ou sk_test_…' ?>"
+                                        value=""
+                                    >
                                 </div>
                             </div>
                             <button class="btn btn-primary" type="submit">Enregistrer</button>
@@ -136,12 +168,55 @@ declare(strict_types=1);
                         </form>
                     </div>
                 <?php elseif ($currentTab === 'email_templates'): ?>
+                    <?php
+                        $smtp = is_array($smtpSettings ?? null) ? $smtpSettings : [];
+                        $emailSub = isset($emailSubTab) && in_array($emailSubTab, ['quote', 'invoice', 'invoice_paid'], true) ? $emailSubTab : 'quote';
+                        $quoteVarChips = [
+                            ['{{company_name}}', 'Entreprise'],
+                            ['{{client_name}}', 'Client'],
+                            ['{{quote_number}}', 'N° devis'],
+                            ['{{quote_title}}', 'Titre devis'],
+                            ['{{quote_total_ht}}', 'Total HT'],
+                            ['{{quote_link}}', 'Lien en ligne'],
+                        ];
+                        $invoiceVarChips = [
+                            ['{{company_name}}', 'Entreprise'],
+                            ['{{client_name}}', 'Client'],
+                            ['{{invoice_number}}', 'N° facture'],
+                            ['{{invoice_title}}', 'Titre facture'],
+                            ['{{project_name}}', 'Chantier'],
+                            ['{{amount_total_ttc}}', 'Montant TTC'],
+                            ['{{due_date}}', 'Échéance'],
+                            ['{{invoice_link}}', 'Lien facture en ligne'],
+                        ];
+                        $invoicePaidVarChips = [
+                            ['{{company_name}}', 'Entreprise'],
+                            ['{{legal_name}}', 'Raison sociale Pilora'],
+                            ['{{client_name}}', 'Client'],
+                            ['{{invoice_number}}', 'N° facture'],
+                            ['{{invoice_title}}', 'Titre facture'],
+                            ['{{project_name}}', 'Chantier'],
+                            ['{{amount_total_ttc}}', 'Montant TTC facture'],
+                            ['{{amount_paid}}', 'Montant payé'],
+                            ['{{remaining}}', 'Reste à payer'],
+                            ['{{payment_date}}', 'Date du paiement'],
+                            ['{{invoice_link}}', 'Lien facture en ligne'],
+                        ];
+                    ?>
                     <div class="settings-panel">
-                        <h3 style="margin:0 0 10px;">Modèles d'emails</h3>
-                        <?php $smtp = is_array($smtpSettings ?? null) ? $smtpSettings : []; ?>
-                        <form method="POST" action="<?= htmlspecialchars($basePath . '/settings/smtp/update', ENT_QUOTES, 'UTF-8') ?>" class="form" style="max-width:none;">
+                        <h3 style="margin:0 0 12px;">Modèles d’emails</h3>
+                        <p class="muted" style="margin:0 0 14px;">Cliquez sur une variable pour l’insérer à la position du curseur dans l’objet ou le corps (placez le curseur avant de cliquer).</p>
+
+                        <div class="email-template-subtabs" role="tablist" aria-label="Type de modèle">
+                            <a class="btn btn-secondary email-template-subtab <?= $emailSub === 'quote' ? 'is-active' : '' ?>" role="tab" aria-selected="<?= $emailSub === 'quote' ? 'true' : 'false' ?>" href="<?= htmlspecialchars($basePath . '/settings?tab=email_templates&email_sub=quote', ENT_QUOTES, 'UTF-8') ?>">Devis</a>
+                            <a class="btn btn-secondary email-template-subtab <?= $emailSub === 'invoice' ? 'is-active' : '' ?>" role="tab" aria-selected="<?= $emailSub === 'invoice' ? 'true' : 'false' ?>" href="<?= htmlspecialchars($basePath . '/settings?tab=email_templates&email_sub=invoice', ENT_QUOTES, 'UTF-8') ?>">Facture</a>
+                            <a class="btn btn-secondary email-template-subtab <?= $emailSub === 'invoice_paid' ? 'is-active' : '' ?>" role="tab" aria-selected="<?= $emailSub === 'invoice_paid' ? 'true' : 'false' ?>" href="<?= htmlspecialchars($basePath . '/settings?tab=email_templates&email_sub=invoice_paid', ENT_QUOTES, 'UTF-8') ?>">Réception paiement</a>
+                        </div>
+
+                        <form method="POST" action="<?= htmlspecialchars($basePath . '/settings/smtp/update', ENT_QUOTES, 'UTF-8') ?>" class="form email-templates-form" style="max-width:none;">
                             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken ?? '', ENT_QUOTES, 'UTF-8') ?>">
                             <input type="hidden" name="settings_tab" value="email_templates">
+                            <input type="hidden" name="email_sub" value="<?= htmlspecialchars($emailSub, ENT_QUOTES, 'UTF-8') ?>">
                             <input type="hidden" name="smtp_host" value="<?= htmlspecialchars((string) ($smtp['host'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                             <input type="hidden" name="smtp_port" value="<?= (int) ($smtp['port'] ?? 587) ?>">
                             <input type="hidden" name="smtp_username" value="<?= htmlspecialchars((string) ($smtp['username'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
@@ -152,19 +227,182 @@ declare(strict_types=1);
                             <input type="hidden" name="smtp_from_name" value="<?= htmlspecialchars((string) ($smtp['from_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                             <input type="hidden" name="vat_rate" value="<?= htmlspecialchars((string) ($smtp['vat_rate'] ?? 20), ENT_QUOTES, 'UTF-8') ?>">
                             <input type="hidden" name="proof_required" value="<?= htmlspecialchars((string) ($smtp['proof_required'] ?? '0'), ENT_QUOTES, 'UTF-8') ?>">
-                            <div class="contact-form-grid">
-                                <div class="field contact-field-full">
-                                    <label class="label" for="quote_email_subject">Objet email devis</label>
-                                    <input class="input" id="quote_email_subject" name="quote_email_subject" type="text" value="<?= htmlspecialchars((string) ($smtp['quote_email_subject'] ?? 'Votre devis {{quote_number}}'), ENT_QUOTES, 'UTF-8') ?>">
+
+                            <div class="email-template-panel" id="email-panel-quote" role="tabpanel" <?= $emailSub !== 'quote' ? 'hidden' : '' ?>>
+                                <h4 class="email-template-panel__title">Envoi de devis</h4>
+                                <div class="email-var-toolbar" role="group" aria-label="Variables devis">
+                                    <span class="email-var-toolbar__label">Variables</span>
+                                    <?php foreach ($quoteVarChips as $chip): ?>
+                                        <button type="button" class="email-var-chip js-email-var" data-token="<?= htmlspecialchars($chip[0], ENT_QUOTES, 'UTF-8') ?>" data-scope="quote" title="<?= htmlspecialchars($chip[0], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($chip[1], ENT_QUOTES, 'UTF-8') ?></button>
+                                    <?php endforeach; ?>
                                 </div>
-                                <div class="field contact-field-full">
-                                    <label class="label" for="quote_email_body">Modèle email devis</label>
-                                    <textarea class="input" id="quote_email_body" name="quote_email_body" style="min-height:160px; resize:vertical;"><?= htmlspecialchars((string) ($smtp['quote_email_body'] ?? "Bonjour,\n\nVeuillez trouver votre devis en pièce jointe (PDF).\nVous pouvez aussi le consulter en ligne : {{quote_link}}\n\nCordialement,\n{{company_name}}"), ENT_QUOTES, 'UTF-8') ?></textarea>
-                                    <p class="muted" style="margin:4px 0 0;">Variables: {{company_name}}, {{client_name}}, {{quote_number}}, {{quote_title}}, {{quote_total_ht}}, {{quote_link}}</p>
+                                <div class="contact-form-grid">
+                                    <div class="field contact-field-full">
+                                        <label class="label" for="quote_email_subject">Objet</label>
+                                        <input class="input js-email-target" id="quote_email_subject" name="quote_email_subject" type="text" value="<?= htmlspecialchars((string) ($smtp['quote_email_subject'] ?? 'Votre devis {{quote_number}}'), ENT_QUOTES, 'UTF-8') ?>" data-scope="quote">
+                                    </div>
+                                    <div class="field contact-field-full">
+                                        <label class="label" for="quote_email_body">Corps du message</label>
+                                        <textarea class="input js-email-target" id="quote_email_body" name="quote_email_body" style="min-height:200px; resize:vertical;" data-scope="quote"><?= htmlspecialchars((string) ($smtp['quote_email_body'] ?? "Bonjour,\n\nVeuillez trouver votre devis en pièce jointe (PDF).\nVous pouvez aussi le consulter en ligne : {{quote_link}}\n\nCordialement,\n{{company_name}}"), ENT_QUOTES, 'UTF-8') ?></textarea>
+                                    </div>
                                 </div>
                             </div>
-                            <button class="btn btn-primary" type="submit">Enregistrer modèles</button>
+
+                            <div class="email-template-panel" id="email-panel-invoice" role="tabpanel" <?= $emailSub !== 'invoice' ? 'hidden' : '' ?>>
+                                <h4 class="email-template-panel__title">Envoi de facture</h4>
+                                <div class="email-var-toolbar" role="group" aria-label="Variables facture">
+                                    <span class="email-var-toolbar__label">Variables</span>
+                                    <?php foreach ($invoiceVarChips as $chip): ?>
+                                        <button type="button" class="email-var-chip js-email-var" data-token="<?= htmlspecialchars($chip[0], ENT_QUOTES, 'UTF-8') ?>" data-scope="invoice" title="<?= htmlspecialchars($chip[0], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($chip[1], ENT_QUOTES, 'UTF-8') ?></button>
+                                    <?php endforeach; ?>
+                                </div>
+                                <div class="contact-form-grid">
+                                    <div class="field contact-field-full">
+                                        <label class="label" for="invoice_email_subject">Objet</label>
+                                        <input class="input js-email-target" id="invoice_email_subject" name="invoice_email_subject" type="text" value="<?= htmlspecialchars((string) ($smtp['invoice_email_subject'] ?? 'Votre facture {{invoice_number}}'), ENT_QUOTES, 'UTF-8') ?>" data-scope="invoice">
+                                    </div>
+                                    <div class="field contact-field-full">
+                                        <label class="label" for="invoice_email_body">Corps du message</label>
+                                        <textarea class="input js-email-target" id="invoice_email_body" name="invoice_email_body" style="min-height:200px; resize:vertical;" data-scope="invoice"><?= htmlspecialchars((string) ($smtp['invoice_email_body'] ?? "Bonjour,\n\nVeuillez trouver votre facture en pièce jointe (PDF).\n\nConsultez ou payez en ligne : {{invoice_link}}\n\nCordialement,\n{{company_name}}"), ENT_QUOTES, 'UTF-8') ?></textarea>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="email-template-panel" id="email-panel-invoice-paid" role="tabpanel" <?= $emailSub !== 'invoice_paid' ? 'hidden' : '' ?>>
+                                <h4 class="email-template-panel__title">Accusé de réception de paiement (facture soldée)</h4>
+                                <p class="muted" style="margin:0 0 10px;font-size:13px;">Envoyé au client lorsque la facture passe au statut « Payée » (carte, virement saisi manuellement, etc.). Laisser vide pour désactiver l’envoi automatique.</p>
+                                <div class="email-var-toolbar" role="group" aria-label="Variables paiement">
+                                    <span class="email-var-toolbar__label">Variables</span>
+                                    <?php foreach ($invoicePaidVarChips as $chip): ?>
+                                        <button type="button" class="email-var-chip js-email-var" data-token="<?= htmlspecialchars($chip[0], ENT_QUOTES, 'UTF-8') ?>" data-scope="invoice_paid" title="<?= htmlspecialchars($chip[0], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($chip[1], ENT_QUOTES, 'UTF-8') ?></button>
+                                    <?php endforeach; ?>
+                                </div>
+                                <div class="contact-form-grid">
+                                    <div class="field contact-field-full">
+                                        <label class="label" for="invoice_paid_email_subject">Objet</label>
+                                        <input class="input js-email-target" id="invoice_paid_email_subject" name="invoice_paid_email_subject" type="text" value="<?= htmlspecialchars((string) ($smtp['invoice_paid_email_subject'] ?? 'Réception de votre paiement — {{invoice_number}}'), ENT_QUOTES, 'UTF-8') ?>" data-scope="invoice_paid">
+                                    </div>
+                                    <div class="field contact-field-full">
+                                        <label class="label" for="invoice_paid_email_body">Corps du message</label>
+                                        <textarea class="input js-email-target" id="invoice_paid_email_body" name="invoice_paid_email_body" style="min-height:200px; resize:vertical;" data-scope="invoice_paid"><?= htmlspecialchars((string) ($smtp['invoice_paid_email_body'] ?? "Bonjour {{client_name}},\n\nNous accusons réception de votre paiement pour la facture {{invoice_number}} ({{amount_paid}}).\n\nMerci pour votre confiance.\n\nCordialement,\n{{company_name}}"), ENT_QUOTES, 'UTF-8') ?></textarea>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="inline-actions" style="margin-top:16px;">
+                                <button class="btn btn-primary" type="submit">Enregistrer les modèles</button>
+                            </div>
                         </form>
+                    </div>
+                    <script>
+                    (function () {
+                        function insertAtCaret(el, text) {
+                            if (!el || text === '') return;
+                            var start = el.selectionStart != null ? el.selectionStart : 0;
+                            var end = el.selectionEnd != null ? el.selectionEnd : 0;
+                            var val = el.value;
+                            el.value = val.slice(0, start) + text + val.slice(end);
+                            var pos = start + text.length;
+                            if (el.setSelectionRange) el.setSelectionRange(pos, pos);
+                            el.focus();
+                        }
+                        document.querySelectorAll('.email-templates-form .js-email-var').forEach(function (btn) {
+                            btn.addEventListener('mousedown', function (e) {
+                                e.preventDefault();
+                                var token = btn.getAttribute('data-token') || '';
+                                var scope = btn.getAttribute('data-scope') || 'quote';
+                                var active = document.activeElement;
+                                var ids = scope === 'invoice'
+                                    ? ['invoice_email_subject', 'invoice_email_body']
+                                    : (scope === 'invoice_paid'
+                                        ? ['invoice_paid_email_subject', 'invoice_paid_email_body']
+                                        : ['quote_email_subject', 'quote_email_body']);
+                                var defaultBodyId = scope === 'invoice' ? 'invoice_email_body' : (scope === 'invoice_paid' ? 'invoice_paid_email_body' : 'quote_email_body');
+                                var el = active && active.id && ids.indexOf(active.id) !== -1 ? active : document.getElementById(defaultBodyId);
+                                if (el) insertAtCaret(el, token);
+                            });
+                        });
+                    })();
+                    </script>
+                <?php elseif ($currentTab === 'billing'): ?>
+                    <?php
+                        $company = is_array($company ?? null) ? $company : [];
+                        $packs = is_array($packs ?? null) ? $packs : [];
+                        $paidPacks = [];
+                        foreach ($packs as $p) {
+                            if ((float) ($p['price'] ?? 0) > 0) {
+                                $paidPacks[] = $p;
+                            }
+                        }
+                        $currentPlan = (string) ($company['billingPlan'] ?? '');
+                        $currentCycle = (string) ($company['billingCycle'] ?? '');
+                        $currentRenew = (string) ($company['subscriptionRenewsAt'] ?? '');
+                    ?>
+                    <div class="settings-panel">
+                        <h3 style="margin:0 0 10px;">Abonnement</h3>
+                        <p class="muted" style="margin:0 0 12px;">
+                            Pack actuel: <strong><?= htmlspecialchars($currentPlan !== '' ? $currentPlan : 'Aucun', ENT_QUOTES, 'UTF-8') ?></strong>
+                            — Cycle: <strong><?= htmlspecialchars($currentCycle !== '' ? ($currentCycle === 'annual' ? 'Annuel' : 'Mensuel') : '—', ENT_QUOTES, 'UTF-8') ?></strong>
+                            — Renouvellement: <strong><?= htmlspecialchars($currentRenew !== '' ? $currentRenew : '—', ENT_QUOTES, 'UTF-8') ?></strong>
+                        </p>
+
+                        <form method="POST" action="<?= htmlspecialchars($basePath . '/settings/billing/subscribe', ENT_QUOTES, 'UTF-8') ?>" class="form-stack">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                            <label class="label">Choisir un pack payant</label>
+                            <select class="input js-billing-pack" name="pack_id" required>
+                                <option value="">Sélectionner</option>
+                                <?php foreach ($paidPacks as $p): ?>
+                                    <option value="<?= (int) ($p['id'] ?? 0) ?>" data-price="<?= htmlspecialchars((string) (float) ($p['price'] ?? 0), ENT_QUOTES, 'UTF-8') ?>" data-name="<?= htmlspecialchars((string) ($p['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                        <?= htmlspecialchars((string) ($p['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>
+                                        — <?= htmlspecialchars(number_format((float) ($p['price'] ?? 0), 2, ',', ' ') . ' €', ENT_QUOTES, 'UTF-8') ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+
+                            <label class="label">Cycle</label>
+                            <select class="input js-billing-cycle" name="billing_cycle">
+                                <option value="monthly">Mensuel</option>
+                                <option value="annual">Annuel</option>
+                            </select>
+                            <p class="muted js-billing-cost" style="margin:4px 0 0;">Sélectionnez un pack pour afficher le coût.</p>
+
+                            <button class="btn btn-primary" type="submit">Activer l'abonnement</button>
+                        </form>
+                        <script>
+                        (function () {
+                            var panel = document.currentScript && document.currentScript.previousElementSibling;
+                            if (!panel || !panel.matches('form')) return;
+                            var packSelect = panel.querySelector('.js-billing-pack');
+                            var cycleSelect = panel.querySelector('.js-billing-cycle');
+                            var costEl = panel.querySelector('.js-billing-cost');
+                            if (!packSelect || !cycleSelect || !costEl) return;
+
+                            function formatEuro(value) {
+                                return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value) + ' €';
+                            }
+
+                            function refreshCost() {
+                                var opt = packSelect.options[packSelect.selectedIndex];
+                                var name = opt ? (opt.getAttribute('data-name') || '') : '';
+                                var monthlyPrice = opt ? parseFloat(opt.getAttribute('data-price') || '0') : 0;
+                                if (!name || !(monthlyPrice > 0)) {
+                                    costEl.textContent = 'Sélectionnez un pack pour afficher le coût.';
+                                    return;
+                                }
+                                var cycle = cycleSelect.value || 'monthly';
+                                if (cycle === 'annual') {
+                                    var annual = monthlyPrice * 12;
+                                    costEl.textContent = 'Coût ' + name + ' : ' + formatEuro(annual) + ' / an (' + formatEuro(monthlyPrice) + ' / mois).';
+                                } else {
+                                    costEl.textContent = 'Coût ' + name + ' : ' + formatEuro(monthlyPrice) + ' / mois.';
+                                }
+                            }
+
+                            packSelect.addEventListener('change', refreshCost);
+                            cycleSelect.addEventListener('change', refreshCost);
+                            refreshCost();
+                        })();
+                        </script>
                     </div>
                 <?php elseif ($currentTab === 'users'): ?>
                     <div class="settings-panel">

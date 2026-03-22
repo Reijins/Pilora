@@ -51,6 +51,25 @@ final class HrController extends BaseController
         ]);
     }
 
+    public function newLeaveRequest(Request $request, UserContext $userContext): Response
+    {
+        if ($userContext->userId === null || $userContext->companyId === null) {
+            return Response::redirect('login');
+        }
+        if (!in_array('hr.leave.request', $userContext->permissions, true)) {
+            return Response::redirect('hr');
+        }
+
+        $err = $request->getQueryParam('err', null);
+        $errStr = is_string($err) && $err !== '' ? $err : null;
+
+        return $this->renderPage('hr/new.php', [
+            'pageTitle' => 'Nouvelle demande RH',
+            'csrfToken' => Csrf::token(),
+            'error' => $errStr,
+        ]);
+    }
+
     public function createLeaveRequest(Request $request, UserContext $userContext): Response
     {
         if ($userContext->userId === null || $userContext->companyId === null) {
@@ -62,7 +81,7 @@ final class HrController extends BaseController
 
         $csrfToken = $request->getBodyParam('csrf_token', null);
         if (!Csrf::verify(is_string($csrfToken) ? $csrfToken : null)) {
-            return Response::redirect('hr?err=CSRF%20invalide');
+            return Response::redirect('hr/leave/new?err=CSRF%20invalide');
         }
 
         $type = trim((string) $request->getBodyParam('type', 'conges'));
@@ -71,10 +90,10 @@ final class HrController extends BaseController
         $reason = trim((string) $request->getBodyParam('reason', ''));
 
         if ($startDate === '' || $endDate === '') {
-            return Response::redirect('hr?err=Dates%20requises');
+            return Response::redirect('hr/leave/new?err=Dates%20requises');
         }
         if ($endDate < $startDate) {
-            return Response::redirect('hr?err=Date%20de%20fin%20invalide');
+            return Response::redirect('hr/leave/new?err=Date%20de%20fin%20invalide');
         }
 
         $repo = new LeaveRequestRepository();
@@ -88,7 +107,7 @@ final class HrController extends BaseController
                 reason: $reason !== '' ? $reason : null,
             );
         } catch (\Throwable) {
-            return Response::redirect('hr?err=Impossible%20de%20cr%C3%A9er%20la%20demande');
+            return Response::redirect('hr/leave/new?err=Impossible%20de%20cr%C3%A9er%20la%20demande');
         }
 
         Csrf::rotate();

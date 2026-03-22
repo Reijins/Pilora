@@ -1,0 +1,32 @@
+[
+    {
+        "id": 1,
+        "name": "Starter",
+        "maxUsers": 3,
+        "price": 19.99
+    },
+    {
+        "id": 2,
+        "name": "Pro",
+        "maxUsers": 10,
+        "price": 39.99
+    },
+    {
+        "id": 3,
+        "name": "Entreprise",
+        "maxUsers": 25,
+        "price": 50.99
+    },
+    {
+        "id": 4,
+        "name": "Entreprise +",
+        "maxUsers": 50,
+        "price": 99.99
+    },
+    {
+        "id": 5,
+        "name": "Free",
+        "maxUsers": 1,
+        "price": 0
+    }
+]

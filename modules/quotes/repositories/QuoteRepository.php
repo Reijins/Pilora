@@ -386,18 +386,31 @@ final class QuoteRepository
      *   quantity:float,
      *   unitPrice:float,
      *   lineTotal:float,
-     *   estimatedTimeMinutes:?int
+     *   estimatedTimeMinutes:?int,
+     *   priceLibraryItemId:?int,
+     *   unitLabel:?string
      * }>
      */
     public function listItemsByCompanyIdAndQuoteId(int $companyId, int $quoteId): array
     {
         $pdo = Connection::pdo();
         $stmt = $pdo->prepare('
-            SELECT id, description, quantity, unitPrice, lineTotal, estimatedTimeMinutes
-            FROM QuoteItem
-            WHERE companyId = :companyId
-              AND quoteId = :quoteId
-            ORDER BY id ASC
+            SELECT
+                qi.id,
+                qi.description,
+                qi.quantity,
+                qi.unitPrice,
+                qi.lineTotal,
+                qi.estimatedTimeMinutes,
+                qi.priceLibraryItemId,
+                pl.unitLabel AS unitLabel
+            FROM QuoteItem qi
+            LEFT JOIN PriceLibraryItem pl
+                ON pl.companyId = qi.companyId
+               AND pl.id = qi.priceLibraryItemId
+            WHERE qi.companyId = :companyId
+              AND qi.quoteId = :quoteId
+            ORDER BY qi.id ASC
         ');
         $stmt->execute([
             'companyId' => $companyId,
@@ -511,6 +524,82 @@ final class QuoteRepository
             'companyId' => $companyId,
             'quoteId' => $quoteId,
         ]);
+    }
+
+    /**
+     * Devis rattachés à l’affaire (projectId explicite ou liaison par titre comme ailleurs dans l’app).
+     *
+     * @return array<int, int>
+     */
+    public function listQuoteIdsLinkedToProject(int $companyId, int $projectId, int $clientId, string $projectName): array
+    {
+        $pdo = Connection::pdo();
+        $ids = [];
+
+        $stmt = $pdo->prepare('
+            SELECT id FROM Quote
+            WHERE companyId = :companyId
+              AND projectId = :projectId
+        ');
+        $stmt->execute([
+            'companyId' => $companyId,
+            'projectId' => $projectId,
+        ]);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $ids[] = (int) ($row['id'] ?? 0);
+        }
+
+        $name = trim($projectName);
+        if ($clientId > 0 && $name !== '') {
+            $stmt2 = $pdo->prepare('
+                SELECT id FROM Quote
+                WHERE companyId = :companyId
+                  AND clientId = :clientId
+                  AND projectId IS NULL
+                  AND title IN (:title1, :title2)
+            ');
+            $stmt2->execute([
+                'companyId' => $companyId,
+                'clientId' => $clientId,
+                'title1' => $name,
+                'title2' => 'Devis - ' . $name,
+            ]);
+            foreach ($stmt2->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+                $ids[] = (int) ($row['id'] ?? 0);
+            }
+        }
+
+        $ids = array_values(array_unique(array_filter($ids, static fn (int $id): bool => $id > 0)));
+
+        return $ids;
+    }
+
+    /**
+     * @param array<int, int> $quoteIds
+     */
+    public function refuseQuotesByIds(int $companyId, array $quoteIds): void
+    {
+        $quoteIds = array_values(array_unique(array_filter(
+            array_map(static fn ($v): int => (int) $v, $quoteIds),
+            static fn (int $id): bool => $id > 0
+        )));
+        if ($quoteIds === []) {
+            return;
+        }
+
+        $pdo = Connection::pdo();
+        $placeholders = implode(',', array_fill(0, count($quoteIds), '?'));
+        $sql = "
+            UPDATE Quote
+            SET status = 'refuse',
+                refusedAt = COALESCE(refusedAt, NOW()),
+                updatedAt = NOW()
+            WHERE companyId = ?
+              AND id IN ($placeholders)
+              AND status <> 'refuse'
+        ";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(array_merge([$companyId], $quoteIds));
     }
 }
 

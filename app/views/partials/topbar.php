@@ -1,11 +1,11 @@
 <?php
 declare(strict_types=1);
 // Variables optionnelles: $companyName
+$basePath = isset($basePath) && is_string($basePath) ? $basePath : '';
 ?>
 <header class="topbar">
     <div class="topbar-left">
         <div class="brand">
-            <?php $basePath = isset($basePath) && is_string($basePath) ? $basePath : ''; ?>
             <span class="brand-mark" aria-hidden="true">
                 <img
                     class="brand-mark-img"
@@ -38,6 +38,12 @@ declare(strict_types=1);
                 <span class="meta-value"><?= isset($_SESSION['user_id']) ? 'Active' : 'Non authentifié' ?></span>
             </div>
         </div>
+        <?php if (isset($_SESSION['user_id'])): ?>
+            <form method="post" action="<?= htmlspecialchars($basePath . '/logout', ENT_QUOTES, 'UTF-8') ?>" class="topbar-logout-form">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(\Core\Security\Csrf::token(), ENT_QUOTES, 'UTF-8') ?>">
+                <button type="submit" class="btn btn-secondary btn-sm">Déconnexion</button>
+            </form>
+        <?php endif; ?>
     </div>
 </header>
 

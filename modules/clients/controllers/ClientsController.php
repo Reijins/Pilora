@@ -176,6 +176,7 @@ final class ClientsController extends BaseController
                 email: $email !== '' ? $email : null,
                 address: $address !== '' ? $address : null,
                 notes: $notes !== '' ? $notes : null,
+                siret: $clientType === 'entreprise' && $siret !== '' ? $siret : null,
             );
             if ($clientType === 'particulier' && $createContactWithClient) {
                 (new ContactRepository())->create(
@@ -233,7 +234,6 @@ final class ClientsController extends BaseController
         }
 
         $canViewProjects = in_array('project.read', $userContext->permissions, true);
-        $canAssignTeam = in_array('project.assign_team', $userContext->permissions, true);
         $canReportRead = in_array('project.report.read', $userContext->permissions, true);
         $canPhotoRead = in_array('project.photo.read', $userContext->permissions, true);
         $canViewQuotes = in_array('quote.read', $userContext->permissions, true);
@@ -333,7 +333,6 @@ final class ClientsController extends BaseController
             'quotes' => $quotes,
             'invoices' => $invoices,
             'canViewProjects' => $canViewProjects,
-            'canAssignTeam' => $canAssignTeam,
             'canReportRead' => $canReportRead,
             'canPhotoRead' => $canPhotoRead,
             'canViewQuotes' => $canViewQuotes,
@@ -436,7 +435,8 @@ final class ClientsController extends BaseController
                 phone: $phone !== '' ? $phone : null,
                 email: $email !== '' ? $email : null,
                 address: $address !== '' ? $address : null,
-                notes: $notes !== '' ? $notes : null
+                notes: $notes !== '' ? $notes : null,
+                siret: $clientType === 'entreprise' && $siret !== '' ? $siret : null,
             );
         } catch (\Throwable) {
             return Response::redirect('clients/edit?clientId=' . $clientId . '&err=Impossible%20de%20mettre%20a%20jour');

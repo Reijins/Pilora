@@ -29,6 +29,9 @@ final class PaymentService
             if ($invoice === null) {
                 throw new \RuntimeException('Facture introuvable.');
             }
+            if ((string) ($invoice['status'] ?? '') === 'annulee') {
+                throw new \RuntimeException('Facture annulée.');
+            }
 
             $total = (float) ($invoice['amountTotal'] ?? 0);
             $paid = (float) ($invoice['amountPaid'] ?? 0);

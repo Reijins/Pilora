@@ -112,5 +112,34 @@ final class RbacRepository
 
         return $codes;
     }
+
+    /**
+     * Tous les codes de permissions tenant déclarées pour une société (pour impersonation / contrôles globaux).
+     *
+     * @return list<string>
+     */
+    public function listTenantPermissionCodesForCompany(int $companyId): array
+    {
+        if ($companyId <= 0) {
+            return [];
+        }
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            SELECT DISTINCT code
+            FROM Permission
+            WHERE companyId = :cid AND scope = "tenant"
+            ORDER BY code
+        ');
+        $stmt->execute(['cid' => $companyId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $codes = [];
+        foreach ($rows as $row) {
+            $c = (string) ($row['code'] ?? '');
+            if ($c !== '') {
+                $codes[] = $c;
+            }
+        }
+        return $codes;
+    }
 }
 
