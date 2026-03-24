@@ -66,9 +66,7 @@ final class InvoicePaidReceiptEmailService
         $invoiceNumber = (string) ($invoice['invoiceNumber'] ?? ('FA-' . $invoiceId));
         $invoiceTitle = (string) ($invoice['title'] ?? '');
         $quoteId = (int) ($invoice['quoteId'] ?? 0);
-        $totals = $quoteId > 0
-            ? InvoiceAmountsService::fromQuote($companyId, $quoteId)
-            : ['ht' => 0.0, 'vat_rate' => 20.0, 'vat_amount' => 0.0, 'ttc' => (float) ($invoice['amountTotal'] ?? 0)];
+        $totals = InvoiceAmountsService::displayTotalsForInvoice($companyId, $invoice);
         $amountTtc = round((float) $totals['ttc'], 2);
         $amountPaid = round((float) ($invoice['amountPaid'] ?? 0), 2);
         $remaining = InvoiceAmountsService::remainingTtc($companyId, $invoice);

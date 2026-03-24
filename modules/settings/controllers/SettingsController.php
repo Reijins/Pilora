@@ -18,7 +18,7 @@ use Modules\Users\Repositories\UserAdminRepository;
 final class SettingsController extends BaseController
 {
     private const ADMIN_PERMISSION = 'admin.company.manage';
-    private const SETTINGS_TABS = ['general', 'smtp', 'email_templates', 'users', 'rbac', 'billing'];
+    private const SETTINGS_TABS = ['general', 'smtp', 'email_templates', 'accounting', 'users', 'rbac', 'billing'];
 
     public function index(Request $request, UserContext $userContext): Response
     {
@@ -198,6 +198,48 @@ final class SettingsController extends BaseController
             return Response::redirect('settings/users/new?err=Requete%20invalide');
         }
 
+        $settingsTabEarly = trim((string) $request->getBodyParam('settings_tab', 'smtp'));
+        if ($settingsTabEarly === 'accounting') {
+            $ratesRaw = $request->getBodyParam('vat_account_rate', []);
+            $accsRaw = $request->getBodyParam('vat_account_number', []);
+            if (!is_array($ratesRaw)) {
+                $ratesRaw = [];
+            }
+            if (!is_array($accsRaw)) {
+                $accsRaw = [];
+            }
+            $n = max(count($ratesRaw), count($accsRaw));
+            $pairs = [];
+            for ($i = 0; $i < $n; $i++) {
+                $r = isset($ratesRaw[$i]) ? str_replace(',', '.', trim((string) $ratesRaw[$i])) : '';
+                $a = isset($accsRaw[$i]) ? trim((string) $accsRaw[$i]) : '';
+                if ($r === '' && $a === '') {
+                    continue;
+                }
+                if ($r === '' || !is_numeric($r) || $a === '') {
+                    return Response::redirect('settings?tab=accounting&err=Ligne%20compte%20TVA%20incompl%C3%A8te%20ou%20taux%20invalide');
+                }
+                $pairs[] = ['rate' => round(max(0.0, min(100.0, (float) $r)), 2), 'account' => $a];
+            }
+            $vatJson = json_encode($pairs, JSON_UNESCAPED_UNICODE);
+            if (!is_string($vatJson)) {
+                return Response::redirect('settings?tab=accounting&err=Erreur%20s%C3%A9rialisation%20TVA');
+            }
+            $repoSet = new SmtpSettingsRepository();
+            $existingAcc = $repoSet->getByCompanyId($userContext->companyId);
+            $existingAcc['vat_rate_accounts'] = $vatJson;
+            $existingAcc['default_client_account'] = trim((string) $request->getBodyParam('default_client_account', ''));
+            $existingAcc['default_revenue_account'] = trim((string) $request->getBodyParam('default_revenue_account', ''));
+            try {
+                $repoSet->saveByCompanyId($userContext->companyId, $existingAcc);
+            } catch (\Throwable) {
+                return Response::redirect('settings?tab=accounting&err=Enregistrement%20impossible');
+            }
+            Csrf::rotate();
+
+            return Response::redirect('settings?tab=accounting&msg=Comptabilit%C3%A9%20enregistr%C3%A9e');
+        }
+
         $host = trim((string) $request->getBodyParam('smtp_host', ''));
         $portRaw = $request->getBodyParam('smtp_port', '587');
         $port = is_numeric($portRaw) ? (int) $portRaw : 587;
@@ -236,6 +278,11 @@ final class SettingsController extends BaseController
             $encryption = 'tls';
         }
 
+        $existing = (new SmtpSettingsRepository())->getByCompanyId($userContext->companyId);
+        $vatRateAccountsPersist = (string) ($existing['vat_rate_accounts'] ?? '[]');
+        $defaultClientAccountPersist = trim((string) ($existing['default_client_account'] ?? ''));
+        $defaultRevenueAccountPersist = trim((string) ($existing['default_revenue_account'] ?? ''));
+
         $newLogoPath = '';
         if ($settingsTab === 'general') {
             $uploadedLogo = $this->saveCompanyLogoFromUpload($userContext->companyId);
@@ -258,7 +305,6 @@ final class SettingsController extends BaseController
         }
 
         try {
-            $existing = (new SmtpSettingsRepository())->getByCompanyId($userContext->companyId);
             $logoPath = $newLogoPath !== ''
                 ? $newLogoPath
                 : (string) ($existing['company_logo_path'] ?? '');
@@ -306,6 +352,9 @@ final class SettingsController extends BaseController
                 'from_email' => $fromEmail !== '' ? $fromEmail : (string) ($existing['from_email'] ?? ''),
                 'from_name' => $fromName !== '' ? $fromName : (string) ($existing['from_name'] ?? ''),
                 'vat_rate' => $vatRate,
+                'vat_rate_accounts' => $vatRateAccountsPersist,
+                'default_client_account' => $defaultClientAccountPersist,
+                'default_revenue_account' => $defaultRevenueAccountPersist,
                 'proof_required' => $proofRequired,
                 'quote_email_subject' => $quoteEmailSubject,
                 'quote_email_body' => $quoteEmailBody,

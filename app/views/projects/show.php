@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 use Core\Support\DateFormatter;
-// Variables: $permissionDenied, $project, $kpiQuoteAmount, $kpiInvoiceAmount, $kpiPaidAmount, $kpiRemainingAmount, $quotesCount, $quotes, $activeQuote, $quoteVersions, $quoteVersionIndex, $quoteItemsByQuoteId, $invoicesCount, $invoices, $reports, $photos
+// Variables: $permissionDenied, $project, $kpiQuoteAmount, $kpiInvoiceAmount, $kpiPaidAmount, $kpiRemainingAmount, $quotesCount, $quotes, $activeQuote, $quoteVersions, $quoteVersionIndex, $quoteItemsByQuoteId, $invoicesCount, $invoices, $activeInvoice, $invoiceNavIndex, $invoiceNavTotal, $invoiceNavPrevId, $invoiceNavNextId, $reports, $photos, etc.
 
 $projectStatusCode = (string) ($project['status'] ?? '');
 $projectNotesRaw = (string) ($project['notes'] ?? '');
@@ -43,6 +43,9 @@ if (str_contains($projectNotesRaw, '[STATUS:WAITING_PLANNING]')) {
 } elseif ($projectStatusCode === 'completed') {
     $projectChipClass = 'chip chip-affaire chip-affaire--completed';
 }
+
+$preserveInvoiceIdForQuoteNav = (!empty($activeInvoice) && is_array($activeInvoice)) ? (int) ($activeInvoice['id'] ?? 0) : 0;
+$invoiceIdQueryForQuoteNav = $preserveInvoiceIdForQuoteNav > 0 ? '&invoiceId=' . $preserveInvoiceIdForQuoteNav : '';
 ?>
 <section class="page">
     <div class="card">
@@ -128,23 +131,25 @@ if (str_contains($projectNotesRaw, '[STATUS:WAITING_PLANNING]')) {
                     <div class="section-card">
                         <h3 class="section-title">Devis et prestations</h3>
                         <div class="section-content quote-block">
+                            <div id="project-quote-panel">
                             <?php if (!empty($activeQuote)): ?>
                                 <?php
                                     $activeQid = (int) ($activeQuote['id'] ?? 0);
                                     $activeItems = is_array($quoteItemsByQuoteId[$activeQid] ?? null) ? $quoteItemsByQuoteId[$activeQid] : [];
-                                    $qTotal = 0.0;
+                                    $qAgg = \Modules\Invoices\Services\DocumentTotalsService::aggregate($activeItems);
+                                    $qTotal = $qAgg['ht'];
+                                    $qTotalVat = $qAgg['vat_amount'];
+                                    $qTotalTtc = $qAgg['ttc'];
+                                    $quoteVatByRate = $qAgg['vat_by_rate'];
                                     $qTotalMinutes = 0;
                                     foreach ($activeItems as $it2) {
-                                        $qTotal += (float) ($it2['lineTotal'] ?? 0);
                                         $lineMinutes = is_numeric($it2['estimatedTimeMinutes'] ?? null) ? (int) $it2['estimatedTimeMinutes'] : 0;
                                         $lineQty = (float) ($it2['quantity'] ?? 0);
                                         if ($lineMinutes > 0 && $lineQty > 0) {
                                             $qTotalMinutes += (int) round($lineMinutes * $lineQty);
                                         }
                                     }
-                                    $vatRate = is_numeric($vatRate ?? null) ? (float) $vatRate : 20.0;
-                                    $qTotalVat = round($qTotal * ($vatRate / 100), 2);
-                                    $qTotalTtc = round($qTotal + $qTotalVat, 2);
+                                    $vatRate = $qAgg['vat_rate'];
                                     $qTotalHours = $qTotalMinutes > 0 ? ($qTotalMinutes / 60.0) : 0.0;
                                     $versions = is_array($quoteVersions ?? null) ? $quoteVersions : [];
                                     $vIndex = (int) ($quoteVersionIndex ?? 0);
@@ -185,7 +190,7 @@ if (str_contains($projectNotesRaw, '[STATUS:WAITING_PLANNING]')) {
                                                         $statusLabel = $statusLabelMap[$quoteStatusCode] ?? ($quoteStatusCode !== '' ? $quoteStatusCode : '—');
                                                     ?>
                                                     <span class="<?= htmlspecialchars($quoteStatusClass, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8') ?></span>
-                                                    <span class="status-pill">Version <?= $vCount > 0 ? ($vIndex + 1) : 1 ?>/<?= max(1, $vCount) ?></span>
+                                                    <span class="status-pill"><?= $vCount > 0 ? ($vIndex + 1) : 1 ?>/<?= max(1, $vCount) ?></span>
                                                     <?php if ($isFinal): ?>
                                                         <span class="status-pill">Version finale</span>
                                                     <?php endif; ?>
@@ -193,14 +198,14 @@ if (str_contains($projectNotesRaw, '[STATUS:WAITING_PLANNING]')) {
                                             </div>
                                             <div class="quote-version-nav">
                                                 <?php if (is_array($prevVersion)): ?>
-                                                    <a class="btn btn-secondary btn-icon" href="<?= htmlspecialchars($basePath . '/projects/show?projectId=' . (int) ($project['id'] ?? 0) . '&quoteVersionId=' . (int) ($prevVersion['id'] ?? 0), ENT_QUOTES, 'UTF-8') ?>" title="Version précédente" aria-label="Version précédente">
+                                                    <a class="btn btn-secondary btn-icon js-project-fragment-nav" href="<?= htmlspecialchars($basePath . '/projects/show?projectId=' . (int) ($project['id'] ?? 0) . '&quoteVersionId=' . (int) ($prevVersion['id'] ?? 0) . $invoiceIdQueryForQuoteNav, ENT_QUOTES, 'UTF-8') ?>" title="Version précédente" aria-label="Version précédente">
                                                         <span aria-hidden="true">&#8592;</span>
                                                     </a>
                                                 <?php else: ?>
                                                     <span class="btn btn-secondary btn-icon quote-nav-disabled"><span aria-hidden="true">&#8592;</span></span>
                                                 <?php endif; ?>
                                                 <?php if (is_array($nextVersion)): ?>
-                                                    <a class="btn btn-secondary btn-icon" href="<?= htmlspecialchars($basePath . '/projects/show?projectId=' . (int) ($project['id'] ?? 0) . '&quoteVersionId=' . (int) ($nextVersion['id'] ?? 0), ENT_QUOTES, 'UTF-8') ?>" title="Version suivante" aria-label="Version suivante">
+                                                    <a class="btn btn-secondary btn-icon js-project-fragment-nav" href="<?= htmlspecialchars($basePath . '/projects/show?projectId=' . (int) ($project['id'] ?? 0) . '&quoteVersionId=' . (int) ($nextVersion['id'] ?? 0) . $invoiceIdQueryForQuoteNav, ENT_QUOTES, 'UTF-8') ?>" title="Version suivante" aria-label="Version suivante">
                                                         <span aria-hidden="true">&#8594;</span>
                                                     </a>
                                                 <?php else: ?>
@@ -216,20 +221,28 @@ if (str_contains($projectNotesRaw, '[STATUS:WAITING_PLANNING]')) {
                                                         <th>Qté</th>
                                                         <th class="col-unit">Unité</th>
                                                         <th>Prix unitaire</th>
-                                                        <th>Total ligne</th>
+                                                        <th>TVA %</th>
+                                                        <th>Total HT</th>
+                                                        <th>TTC</th>
                                                         <th>Temps (h)</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     <?php if (!empty($activeItems)): ?>
                                                         <?php foreach ($activeItems as $it): ?>
-                                                            <?php $uLab = trim((string) ($it['unitLabel'] ?? '')); ?>
+                                                            <?php
+                                                                $uLab = trim((string) ($it['unitLabel'] ?? ''));
+                                                                $vrL = (float) ($it['vatRate'] ?? 20);
+                                                                $lTtcL = isset($it['lineTtc']) ? (float) $it['lineTtc'] : round((float) ($it['lineTotal'] ?? 0) * (1 + $vrL / 100), 2);
+                                                            ?>
                                                             <tr>
                                                                 <td><?= htmlspecialchars((string) ($it['description'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                                                                 <td><?= htmlspecialchars((string) number_format((float) ($it['quantity'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?></td>
                                                                 <td class="col-unit"><?= $uLab !== '' ? htmlspecialchars($uLab, ENT_QUOTES, 'UTF-8') : '—' ?></td>
                                                                 <td><?= htmlspecialchars((string) number_format((float) ($it['unitPrice'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</td>
+                                                                <td><?= htmlspecialchars((string) number_format($vrL, 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?></td>
                                                                 <td><?= htmlspecialchars((string) number_format((float) ($it['lineTotal'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</td>
+                                                                <td><?= htmlspecialchars((string) number_format($lTtcL, 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</td>
                                                                 <td><?php
                                                                     $lineM = is_numeric($it['estimatedTimeMinutes'] ?? null) ? (int) $it['estimatedTimeMinutes'] : 0;
                                                                     echo $lineM > 0
@@ -240,7 +253,7 @@ if (str_contains($projectNotesRaw, '[STATUS:WAITING_PLANNING]')) {
                                                         <?php endforeach; ?>
                                                     <?php else: ?>
                                                         <tr>
-                                                            <td colspan="6" class="muted quote-empty">Aucune prestation sur ce devis.</td>
+                                                            <td colspan="8" class="muted quote-empty">Aucune prestation sur ce devis.</td>
                                                         </tr>
                                                     <?php endif; ?>
                                                 </tbody>
@@ -251,10 +264,21 @@ if (str_contains($projectNotesRaw, '[STATUS:WAITING_PLANNING]')) {
                                                 <span class="quote-summary-label">Total HT</span>
                                                 <strong class="quote-summary-value"><?= htmlspecialchars((string) number_format($qTotal, 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</strong>
                                             </div>
+                                            <?php foreach ($quoteVatByRate as $vrB): ?>
+                                                <?php if (((float) ($vrB['vat'] ?? 0)) <= 0 && ((float) ($vrB['ht'] ?? 0)) <= 0) {
+                                                    continue;
+                                                } ?>
+                                            <div class="quote-summary-item">
+                                                <span class="quote-summary-label">TVA <?= htmlspecialchars((string) number_format((float) ($vrB['rate'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> % <span class="muted">(HT <?= htmlspecialchars((string) number_format((float) ($vrB['ht'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?>)</span></span>
+                                                <strong class="quote-summary-value"><?= htmlspecialchars((string) number_format((float) ($vrB['vat'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</strong>
+                                            </div>
+                                            <?php endforeach; ?>
+                                            <?php if ($quoteVatByRate === []): ?>
                                             <div class="quote-summary-item">
                                                 <span class="quote-summary-label">TVA (<?= htmlspecialchars((string) number_format($vatRate, 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> %)</span>
                                                 <strong class="quote-summary-value"><?= htmlspecialchars((string) number_format($qTotalVat, 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</strong>
                                             </div>
+                                            <?php endif; ?>
                                             <div class="quote-summary-item">
                                                 <span class="quote-summary-label">Total TTC</span>
                                                 <strong class="quote-summary-value"><?= htmlspecialchars((string) number_format($qTotalTtc, 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</strong>
@@ -319,93 +343,150 @@ if (str_contains($projectNotesRaw, '[STATUS:WAITING_PLANNING]')) {
                                     <p class="muted">Aucun devis lié à cette affaire.</p>
                                 </div>
                             <?php endif; ?>
+                            </div>
                         </div>
                     </div>
 
                     <div class="section-card">
                         <h3 class="section-title">Factures</h3>
                         <div class="section-content">
-                            <?php if (!empty($invoices)): ?>
-                                <div style="display:grid; gap:10px;">
-                                    <?php foreach ($invoices as $inv): ?>
-                                        <?php
-                                            $invStatus = (string) ($inv['status'] ?? '');
-                                            $invStatusLabel = match ($invStatus) {
-                                                'brouillon' => 'Brouillon',
-                                                'envoyee' => 'Envoyée',
-                                                'partiellement_payee' => 'Partiellement payée',
-                                                'payee' => 'Payée',
-                                                'echue' => 'Échue',
-                                                'annulee' => 'Annulée',
-                                                default => ($invStatus !== '' ? $invStatus : '—'),
-                                            };
-                                            $invRemaining = (float) ($inv['amountRemaining'] ?? 0);
-                                            if ($invRemaining < 0) {
-                                                $invRemaining = 0.0;
-                                            }
-                                            $invBadgeClass = 'inv-badge inv-badge--' . preg_replace('/[^a-z_]/', '', $invStatus);
-                                        ?>
-                                        <div style="border:1px solid #dbe7ef; border-radius:12px; padding:12px; background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%);">
-                                            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
-                                                <div>
-                                                    <div style="font-weight:800; margin-bottom:4px;">
-                                                        <?= htmlspecialchars((string) ($inv['invoiceNumber'] ?? ('FA-' . (int) ($inv['id'] ?? 0))), ENT_QUOTES, 'UTF-8') ?>
-                                                    </div>
-                                                    <div class="muted" style="font-size:12px;"><?= htmlspecialchars((string) ($inv['title'] ?? ''), ENT_QUOTES, 'UTF-8') ?></div>
+                            <?php if (!empty($canInvoiceCreate)): ?>
+                                <p style="margin:0 0 12px;">
+                                    <a class="btn btn-secondary" href="<?= htmlspecialchars($basePath . '/invoices/new-manual?projectId=' . (int) ($project['id'] ?? 0), ENT_QUOTES, 'UTF-8') ?>">Nouvelle facture manuelle</a>
+                                    <span class="muted" style="font-size:13px; margin-left:8px;">Avoir, régularisation, facture sans devis…</span>
+                                </p>
+                            <?php endif; ?>
+                            <div id="project-invoice-panel">
+                            <?php if (!empty($activeInvoice) && is_array($activeInvoice)): ?>
+                                <?php
+                                    $inv = $activeInvoice;
+                                    $invStatus = (string) ($inv['status'] ?? '');
+                                    $invStatusLabel = match ($invStatus) {
+                                        'brouillon' => 'Brouillon',
+                                        'envoyee' => 'Envoyée',
+                                        'partiellement_payee' => 'Partiellement payée',
+                                        'payee' => 'Payée',
+                                        'echue' => 'Échue',
+                                        'annulee' => 'Annulée',
+                                        default => ($invStatus !== '' ? $invStatus : '—'),
+                                    };
+                                    $invRemaining = (float) ($inv['amountRemaining'] ?? 0);
+                                    if ($invRemaining < 0) {
+                                        $invRemaining = 0.0;
+                                    }
+                                    $invBadgeClass = 'inv-badge inv-badge--' . preg_replace('/[^a-z_]/', '', $invStatus);
+                                    $cardInvId = (int) ($inv['id'] ?? 0);
+                                    $invNavTotal = max(1, (int) ($invoiceNavTotal ?? 1));
+                                    $invNavPos = (int) ($invoiceNavIndex ?? 0) + 1;
+                                    $navPrevId = (int) ($invoiceNavPrevId ?? 0);
+                                    $navNextId = (int) ($invoiceNavNextId ?? 0);
+                                    $projShowId = (int) ($project['id'] ?? 0);
+                                    $qvidPreserve = is_array($activeQuote ?? null) ? (int) ($activeQuote['id'] ?? 0) : 0;
+                                    $invNavBase = $basePath . '/projects/show?projectId=' . $projShowId;
+                                    $invNavSuffix = $qvidPreserve > 0 ? '&quoteVersionId=' . $qvidPreserve : '';
+                                ?>
+                                <div class="quote-entry">
+                                    <div class="quote-entry-section">
+                                        <div class="quote-entry-row">
+                                            <div class="quote-card-title-wrap">
+                                                <h4 class="quote-card-title"><?= htmlspecialchars((string) ($inv['title'] ?? ('Facture #' . $cardInvId)), ENT_QUOTES, 'UTF-8') ?></h4>
+                                                <div class="quote-card-meta">
+                                                    <span class="muted">N° <?= htmlspecialchars((string) ($inv['invoiceNumber'] ?? ('FA-' . $cardInvId)), ENT_QUOTES, 'UTF-8') ?></span>
+                                                    <span class="<?= htmlspecialchars($invBadgeClass, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($invStatusLabel, ENT_QUOTES, 'UTF-8') ?></span>
+                                                    <span class="status-pill"><?= $invNavPos ?>/<?= $invNavTotal ?></span>
                                                 </div>
-                                                <span class="<?= htmlspecialchars($invBadgeClass, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($invStatusLabel, ENT_QUOTES, 'UTF-8') ?></span>
                                             </div>
-                                            <div style="display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; margin-top:10px;">
-                                                <div class="kv" style="margin:0;">
-                                                    <div class="kv-label">Montant TTC</div>
-                                                    <div class="kv-value"><?= htmlspecialchars(number_format((float) ($inv['amountTotal'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</div>
-                                                </div>
-                                                <div class="kv" style="margin:0;">
-                                                    <div class="kv-label">Reste à payer</div>
-                                                    <div class="kv-value"><?= htmlspecialchars(number_format($invRemaining > 0 ? $invRemaining : 0, 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</div>
-                                                </div>
-                                                <div class="kv" style="margin:0;">
-                                                    <div class="kv-label">Échéance</div>
-                                                    <div class="kv-value"><?= htmlspecialchars(DateFormatter::frDate(isset($inv['dueDate']) ? (string) $inv['dueDate'] : null), ENT_QUOTES, 'UTF-8') ?></div>
-                                                </div>
-                                            </div>
-                                            <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; align-items:center;">
-                                                <?php if (!empty($inv['paymentToken'])): ?>
-                                                    <a class="btn btn-secondary" target="_blank" rel="noopener" href="<?= htmlspecialchars($basePath . '/invoice/pay?token=' . urlencode((string) $inv['paymentToken']), ENT_QUOTES, 'UTF-8') ?>">Voir / payer en ligne</a>
+                                            <div class="quote-version-nav">
+                                                <?php if ($navPrevId > 0): ?>
+                                                    <a class="btn btn-secondary btn-icon js-project-fragment-nav" href="<?= htmlspecialchars($invNavBase . '&invoiceId=' . $navPrevId . $invNavSuffix, ENT_QUOTES, 'UTF-8') ?>" title="Facture précédente" aria-label="Facture précédente">
+                                                        <span aria-hidden="true">&#8592;</span>
+                                                    </a>
+                                                <?php else: ?>
+                                                    <span class="btn btn-secondary btn-icon quote-nav-disabled"><span aria-hidden="true">&#8592;</span></span>
                                                 <?php endif; ?>
-                                                <?php if (!empty($canInvoiceSend) && $invStatus === 'brouillon'): ?>
-                                                    <form method="POST" action="<?= htmlspecialchars($basePath . '/invoices/send', ENT_QUOTES, 'UTF-8') ?>" style="display:inline;">
-                                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken ?? '', ENT_QUOTES, 'UTF-8') ?>">
-                                                        <input type="hidden" name="project_id" value="<?= (int) ($project['id'] ?? 0) ?>">
-                                                        <input type="hidden" name="invoice_id" value="<?= (int) ($inv['id'] ?? 0) ?>">
-                                                        <button class="btn btn-primary" type="submit">Envoyer au client</button>
-                                                    </form>
-                                                <?php endif; ?>
-                                                <?php if (!empty($canInvoiceSend) && in_array($invStatus, ['envoyee', 'partiellement_payee', 'echue'], true)): ?>
-                                                    <form method="POST" action="<?= htmlspecialchars($basePath . '/invoices/resend', ENT_QUOTES, 'UTF-8') ?>" style="display:inline;">
-                                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken ?? '', ENT_QUOTES, 'UTF-8') ?>">
-                                                        <input type="hidden" name="project_id" value="<?= (int) ($project['id'] ?? 0) ?>">
-                                                        <input type="hidden" name="invoice_id" value="<?= (int) ($inv['id'] ?? 0) ?>">
-                                                        <button class="btn btn-secondary" type="submit">Renvoyer la facture par e-mail</button>
-                                                    </form>
-                                                <?php endif; ?>
-                                                <?php if (!empty($canInvoiceMarkPaid) && $invStatus !== 'annulee' && $invStatus !== 'payee' && $invRemaining > 0.009): ?>
-                                                    <button
-                                                        type="button"
-                                                        class="btn btn-secondary js-open-invoice-payment"
-                                                        data-invoice-id="<?= (int) ($inv['id'] ?? 0) ?>"
-                                                        data-project-id="<?= (int) ($project['id'] ?? 0) ?>"
-                                                        data-remaining="<?= htmlspecialchars((string) round($invRemaining, 2), ENT_QUOTES, 'UTF-8') ?>"
-                                                        data-label="<?= htmlspecialchars((string) ($inv['invoiceNumber'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
-                                                    >Ajouter un paiement</button>
+                                                <?php if ($navNextId > 0): ?>
+                                                    <a class="btn btn-secondary btn-icon js-project-fragment-nav" href="<?= htmlspecialchars($invNavBase . '&invoiceId=' . $navNextId . $invNavSuffix, ENT_QUOTES, 'UTF-8') ?>" title="Facture suivante" aria-label="Facture suivante">
+                                                        <span aria-hidden="true">&#8594;</span>
+                                                    </a>
+                                                <?php else: ?>
+                                                    <span class="btn btn-secondary btn-icon quote-nav-disabled"><span aria-hidden="true">&#8594;</span></span>
                                                 <?php endif; ?>
                                             </div>
                                         </div>
-                                    <?php endforeach; ?>
+                                        <div style="display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; margin-top:10px;">
+                                            <div class="kv" style="margin:0;">
+                                                <div class="kv-label">Montant TTC</div>
+                                                <div class="kv-value"><?= htmlspecialchars(number_format((float) ($inv['amountTotal'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</div>
+                                            </div>
+                                            <div class="kv" style="margin:0;">
+                                                <div class="kv-label">Reste à payer</div>
+                                                <div class="kv-value"><?= htmlspecialchars(number_format($invRemaining > 0 ? $invRemaining : 0, 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</div>
+                                            </div>
+                                            <div class="kv" style="margin:0;">
+                                                <div class="kv-label">Échéance</div>
+                                                <div class="kv-value"><?= htmlspecialchars(DateFormatter::frDate(isset($inv['dueDate']) ? (string) $inv['dueDate'] : null), ENT_QUOTES, 'UTF-8') ?></div>
+                                            </div>
+                                        </div>
+                                        <div class="table-actions-icons" style="margin-top:14px; width:100%; justify-content:flex-end;">
+                                            <?php if (!empty($canInvoiceSend)): ?>
+                                                <a class="btn btn-secondary btn-icon" href="<?= htmlspecialchars($basePath . '/invoices/show?invoiceId=' . $cardInvId, ENT_QUOTES, 'UTF-8') ?>" title="Consulter la facture" aria-label="Consulter la facture"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></a>
+                                            <?php endif; ?>
+                                            <?php if (!empty($canInvoiceUpdate) && in_array($invStatus, ['brouillon', 'envoyee'], true)): ?>
+                                                <a class="btn btn-secondary btn-icon" href="<?= htmlspecialchars($basePath . '/invoices/edit?invoiceId=' . $cardInvId, ENT_QUOTES, 'UTF-8') ?>" title="Modifier la facture" aria-label="Modifier la facture"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></a>
+                                            <?php endif; ?>
+                                            <?php if (!empty($inv['paymentToken'])): ?>
+                                                <a class="btn btn-secondary btn-icon" target="_blank" rel="noopener" href="<?= htmlspecialchars($basePath . '/invoice/pay?token=' . urlencode((string) $inv['paymentToken']), ENT_QUOTES, 'UTF-8') ?>" title="Voir / payer en ligne" aria-label="Voir ou payer en ligne"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg></a>
+                                            <?php endif; ?>
+                                            <?php if (!empty($canInvoiceSend) && $invStatus === 'brouillon'): ?>
+                                                <form method="POST" action="<?= htmlspecialchars($basePath . '/invoices/send', ENT_QUOTES, 'UTF-8') ?>" style="display:inline;">
+                                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                                                    <input type="hidden" name="project_id" value="<?= $projShowId ?>">
+                                                    <input type="hidden" name="invoice_id" value="<?= $cardInvId ?>">
+                                                    <button class="btn btn-primary btn-icon" type="submit" title="Envoyer la facture au client" aria-label="Envoyer la facture au client"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button>
+                                                </form>
+                                            <?php endif; ?>
+                                            <?php
+                                                $invQuoteIdForDel = (int) ($inv['quoteId'] ?? 0);
+                                                if (
+                                                    $invStatus === 'brouillon'
+                                                    && $invQuoteIdForDel === 0
+                                                    && (!empty($canInvoiceUpdate) || !empty($canInvoiceCreate))
+                                                ):
+                                            ?>
+                                                <form method="POST" action="<?= htmlspecialchars($basePath . '/invoices/delete-manual-draft', ENT_QUOTES, 'UTF-8') ?>" style="display:inline;" onsubmit="return confirm('Supprimer définitivement ce brouillon (facture manuelle sans devis) ?');">
+                                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                                                    <input type="hidden" name="project_id" value="<?= $projShowId ?>">
+                                                    <input type="hidden" name="invoice_id" value="<?= $cardInvId ?>">
+                                                    <button class="btn btn-danger btn-icon" type="submit" title="Supprimer le brouillon" aria-label="Supprimer le brouillon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14zM10 11v6M14 11v6"/></svg></button>
+                                                </form>
+                                            <?php endif; ?>
+                                            <?php if (!empty($canInvoiceSend) && in_array($invStatus, ['envoyee', 'partiellement_payee', 'echue'], true)): ?>
+                                                <form method="POST" action="<?= htmlspecialchars($basePath . '/invoices/resend', ENT_QUOTES, 'UTF-8') ?>" style="display:inline;">
+                                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                                                    <input type="hidden" name="project_id" value="<?= $projShowId ?>">
+                                                    <input type="hidden" name="invoice_id" value="<?= $cardInvId ?>">
+                                                    <button class="btn btn-secondary btn-icon" type="submit" title="Renvoyer la facture par e-mail" aria-label="Renvoyer la facture par e-mail"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></button>
+                                                </form>
+                                            <?php endif; ?>
+                                            <?php if (!empty($canInvoiceMarkPaid) && $invStatus !== 'annulee' && $invStatus !== 'payee' && $invRemaining > 0.009): ?>
+                                                <button
+                                                    type="button"
+                                                    class="btn btn-primary btn-icon js-open-invoice-payment"
+                                                    title="Enregistrer un paiement"
+                                                    aria-label="Enregistrer un paiement"
+                                                    data-invoice-id="<?= $cardInvId ?>"
+                                                    data-project-id="<?= $projShowId ?>"
+                                                    data-remaining="<?= htmlspecialchars((string) round($invRemaining, 2), ENT_QUOTES, 'UTF-8') ?>"
+                                                    data-label="<?= htmlspecialchars((string) ($inv['invoiceNumber'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                                                ><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></button>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
                                 </div>
                             <?php else: ?>
                                 <p class="muted">Aucune facture générée pour cette affaire.</p>
                             <?php endif; ?>
+                            </div>
                         </div>
                     </div>
 
@@ -475,25 +556,73 @@ if (str_contains($projectNotesRaw, '[STATUS:WAITING_PLANNING]')) {
                         function closeM() {
                             modal.style.display = 'none';
                         }
-                        document.querySelectorAll('.js-open-invoice-payment').forEach(function (btn) {
-                            btn.addEventListener('click', function () {
-                                var rem = parseFloat(String(btn.getAttribute('data-remaining') || '0').replace(',', '.')) || 0;
-                                document.getElementById('invoice-pay-project-id').value = btn.getAttribute('data-project-id') || '';
-                                document.getElementById('invoice-pay-invoice-id').value = btn.getAttribute('data-invoice-id') || '';
-                                remEl.textContent = rem.toFixed(2).replace('.', ',');
-                                amt.max = rem > 0 ? rem.toFixed(2) : '';
-                                amt.value = '';
-                                var lab = btn.getAttribute('data-label') || '';
-                                if (sub) sub.textContent = lab ? ('Facture ' + lab + ' — reste ' + rem.toFixed(2).replace('.', ',') + ' €') : 'Saisissez le montant reçu.';
-                                modal.style.display = 'flex';
-                                amt.focus();
-                            });
+                        document.addEventListener('click', function (ev) {
+                            var btn = ev.target.closest('.js-open-invoice-payment');
+                            if (!btn) return;
+                            var rem = parseFloat(String(btn.getAttribute('data-remaining') || '0').replace(',', '.')) || 0;
+                            document.getElementById('invoice-pay-project-id').value = btn.getAttribute('data-project-id') || '';
+                            document.getElementById('invoice-pay-invoice-id').value = btn.getAttribute('data-invoice-id') || '';
+                            remEl.textContent = rem.toFixed(2).replace('.', ',');
+                            amt.max = rem > 0 ? rem.toFixed(2) : '';
+                            amt.value = '';
+                            var lab = btn.getAttribute('data-label') || '';
+                            if (sub) sub.textContent = lab ? ('Facture ' + lab + ' — reste ' + rem.toFixed(2).replace('.', ',') + ' €') : 'Saisissez le montant reçu.';
+                            modal.style.display = 'flex';
+                            amt.focus();
                         });
                         document.querySelectorAll('.js-close-invoice-payment').forEach(function (b) {
                             b.addEventListener('click', closeM);
                         });
                         modal.addEventListener('click', function (e) {
                             if (e.target === modal) closeM();
+                        });
+                    })();
+                    </script>
+                    <script>
+                    (function () {
+                        function panelLoading(on) {
+                            ['project-quote-panel', 'project-invoice-panel'].forEach(function (id) {
+                                var el = document.getElementById(id);
+                                if (el) el.classList.toggle('project-fragment-loading', on);
+                            });
+                        }
+                        function swapFragments(html) {
+                            var doc = new DOMParser().parseFromString(html, 'text/html');
+                            var qNew = doc.getElementById('project-quote-panel');
+                            var qEl = document.getElementById('project-quote-panel');
+                            if (qNew && qEl) qEl.innerHTML = qNew.innerHTML;
+                            var iNew = doc.getElementById('project-invoice-panel');
+                            var iEl = document.getElementById('project-invoice-panel');
+                            if (iNew && iEl) iEl.innerHTML = iNew.innerHTML;
+                        }
+                        function loadFragments(url, push) {
+                            panelLoading(true);
+                            fetch(url, { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                                .then(function (r) {
+                                    if (!r.ok) throw new Error('fetch');
+                                    return r.text();
+                                })
+                                .then(function (html) {
+                                    swapFragments(html);
+                                    if (push) history.pushState({ piloraProjectFragments: true }, '', url);
+                                })
+                                .catch(function () {
+                                    window.location.href = url;
+                                })
+                                .finally(function () {
+                                    panelLoading(false);
+                                });
+                        }
+                        document.addEventListener('click', function (e) {
+                            var a = e.target.closest('a.js-project-fragment-nav');
+                            if (!a || !a.href) return;
+                            if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                            if (a.target === '_blank') return;
+                            e.preventDefault();
+                            loadFragments(a.href, true);
+                        });
+                        window.addEventListener('popstate', function () {
+                            loadFragments(window.location.href, false);
                         });
                     })();
                     </script>

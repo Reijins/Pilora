@@ -41,6 +41,8 @@ declare(strict_types=1);
                 <input class="input" id="address" name="address" type="text" value="<?= htmlspecialchars((string) ($client['address'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                 <label class="label" for="notes">Notes</label>
                 <textarea class="input" id="notes" name="notes" style="min-height:120px;resize:vertical;"><?= htmlspecialchars((string) ($client['notes'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea>
+                <label class="label" for="accounting_customer_account">Compte client (comptabilité)</label>
+                <input class="input" id="accounting_customer_account" name="accounting_customer_account" type="text" maxlength="32" placeholder="411xxx — laisser vide pour le défaut société" value="<?= htmlspecialchars(trim((string) ($client['accountingCustomerAccount'] ?? '')), ENT_QUOTES, 'UTF-8') ?>">
                 <div class="inline-actions">
                     <button class="btn btn-primary" type="submit">Enregistrer</button>
                     <a class="btn btn-secondary" href="<?= htmlspecialchars($basePath . '/clients/show?clientId=' . (int) ($client['id'] ?? 0), ENT_QUOTES, 'UTF-8') ?>">Retour</a>

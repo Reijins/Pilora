@@ -444,6 +444,23 @@ body{
     line-height:1;
     margin-top:-2px;
 }
+.btn-icon svg{
+    width:18px;
+    height:18px;
+    display:block;
+    flex-shrink:0;
+}
+.table-actions-icons{
+    display:inline-flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:6px;
+}
+.project-fragment-loading{
+    opacity:0.55;
+    pointer-events:none;
+    transition:opacity 0.15s ease;
+}
 
 .form{
     display:flex;

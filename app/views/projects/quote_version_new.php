@@ -64,6 +64,7 @@ declare(strict_types=1);
                                     <?php endforeach; ?>
                                 </datalist>
                                 <?php
+                                    $vatR = isset($quoteVatRate) && is_numeric($quoteVatRate) ? (float) $quoteVatRate : 20.0;
                                     $unitLabelByLibName = [];
                                     foreach (($priceItems ?? []) as $pi) {
                                         $ln = trim((string) ($pi['name'] ?? ''));
@@ -79,17 +80,18 @@ declare(strict_types=1);
                                 ?>
 
                                 <div class="affair-field-full">
-                                    <div style="overflow-x:visible;">
-                                        <table class="table" id="affair-quote-items-table" style="table-layout:fixed; width:100%;">
+                                    <div class="affair-quote-table-scroll" style="overflow-x:auto; -webkit-overflow-scrolling:touch; width:100%;">
+                                        <table class="table" id="affair-quote-items-table" style="table-layout:auto; min-width:860px; width:100%;">
                                             <thead>
                                             <tr>
-                                                <th style="width:44%;">Prestation</th>
-                                                <th style="width:8%;">Qté</th>
-                                                <th style="width:10%;">Unité</th>
-                                                <th style="width:14%;">Prix unitaire HT (€)</th>
-                                                <th style="width:10%;">Temps (h)</th>
-                                                <th style="width:8%;">Biblio</th>
-                                                <th style="width:5%;"></th>
+                                                <th style="width:34%;">Prestation</th>
+                                                <th style="width:7%;">Qté</th>
+                                                <th style="width:8%;">Unité</th>
+                                                <th style="width:12%;">PU HT (€)</th>
+                                                <th style="width:9%;">TVA %</th>
+                                                <th style="width:8%;">Temps (h)</th>
+                                                <th style="width:7%;">Biblio</th>
+                                                <th style="width:4%;"></th>
                                             </tr>
                                             </thead>
                                             <tbody id="affair-quote-items-body">
@@ -99,6 +101,8 @@ declare(strict_types=1);
                                                 'quantity' => 1,
                                                 'unitPrice' => 0,
                                                 'estimatedTimeMinutes' => null,
+                                                'vatRate' => $vatR,
+                                                'revenueAccount' => '',
                                             ]];
                                             ?>
                                             <?php foreach ($rows as $idx => $row): ?>
@@ -113,22 +117,30 @@ declare(strict_types=1);
                                                 $rowUnitDisp = ($rowUnitKey !== '' && ($unitLabelByLibName[$rowUnitKey] ?? '') !== '')
                                                     ? (string) $unitLabelByLibName[$rowUnitKey]
                                                     : '—';
+                                                $lineVat = isset($row['vatRate']) && is_numeric($row['vatRate']) ? (float) $row['vatRate'] : $vatR;
+                                                $lineVatDisp = rtrim(rtrim(number_format($lineVat, 2, '.', ''), '0'), '.');
+                                                if ($lineVatDisp === '') {
+                                                    $lineVatDisp = '0';
+                                                }
+                                                $lineAcc = trim((string) ($row['revenueAccount'] ?? ''));
                                                 ?>
                                                 <tr class="affair-quote-item-row" data-row-index="<?= (int) $idx ?>">
-                                                    <td style="width:44%; min-width:200px;">
+                                                    <td style="min-width:160px;">
                                                         <input class="input affair-item-name-input" name="item_name[]" type="text" list="affairPriceLibraryNames" placeholder="Nom de la prestation" required style="width:100%;" value="<?= htmlspecialchars((string) ($row['description'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                                                         <input type="hidden" class="affair-item-price-item-id" name="item_price_item_id[]" value="">
+                                                        <input type="hidden" class="affair-item-revenue-hidden" name="item_revenue_account[]" value="<?= htmlspecialchars($lineAcc, ENT_QUOTES, 'UTF-8') ?>">
                                                     </td>
-                                                    <td style="width:8%;"><input class="input affair-item-quantity" name="item_quantity[]" type="number" step="1" min="0" value="<?= htmlspecialchars((string) ($row['quantity'] ?? 1), ENT_QUOTES, 'UTF-8') ?>" style="width:100%; max-width:none;"></td>
-                                                    <td style="width:10%;" class="muted affair-item-unit-cell"><span class="affair-item-unit-label"><?= htmlspecialchars($rowUnitDisp, ENT_QUOTES, 'UTF-8') ?></span></td>
-                                                    <td style="width:14%;"><input class="input affair-item-unit-price" name="item_unit_price[]" type="number" step="0.01" value="<?= htmlspecialchars((string) ($row['unitPrice'] ?? 0), ENT_QUOTES, 'UTF-8') ?>" style="width:100%; max-width:none;"></td>
-                                                    <td style="width:10%;"><input class="input affair-item-est-time" name="item_estimated_time_hours[]" type="number" step="1" min="0" placeholder="h" value="<?= htmlspecialchars($hoursVal, ENT_QUOTES, 'UTF-8') ?>" style="width:100%; max-width:none;"></td>
+                                                    <td style="white-space:nowrap;"><input class="input affair-item-quantity" name="item_quantity[]" type="number" step="1" min="0" value="<?= htmlspecialchars((string) ($row['quantity'] ?? 1), ENT_QUOTES, 'UTF-8') ?>" style="min-width:4.75rem; width:5.25rem; max-width:none;"></td>
+                                                    <td class="muted affair-item-unit-cell"><span class="affair-item-unit-label"><?= htmlspecialchars($rowUnitDisp, ENT_QUOTES, 'UTF-8') ?></span></td>
+                                                    <td><input class="input affair-item-unit-price" name="item_unit_price[]" type="number" step="0.01" value="<?= htmlspecialchars((string) ($row['unitPrice'] ?? 0), ENT_QUOTES, 'UTF-8') ?>" style="width:100%; max-width:none;"></td>
+                                                    <td><input class="input affair-item-vat-rate" name="item_vat_rate[]" type="number" step="0.01" min="0" max="100" value="<?= htmlspecialchars($lineVatDisp, ENT_QUOTES, 'UTF-8') ?>" style="width:100%; max-width:none;"></td>
+                                                    <td><input class="input affair-item-est-time" name="item_estimated_time_hours[]" type="number" step="1" min="0" placeholder="h" value="<?= htmlspecialchars($hoursVal, ENT_QUOTES, 'UTF-8') ?>" style="width:100%; max-width:none;"></td>
                                                     <td>
                                                         <label class="checkbox-item" style="padding:0; margin:0; justify-content:center;">
                                                             <input type="checkbox" class="affair-item-save-library" name="item_save_to_library[<?= (int) $idx ?>]" value="1">
                                                         </label>
                                                     </td>
-                                                    <td style="width:5%; text-align:center;">
+                                                    <td style="text-align:center;">
                                                         <button class="btn btn-danger btn-icon affair-btn-remove-row" type="button" aria-label="Supprimer la ligne"><span aria-hidden="true">&times;</span></button>
                                                     </td>
                                                 </tr>
@@ -141,12 +153,11 @@ declare(strict_types=1);
                                 <div class="affair-field-full">
                                     <button class="btn btn-secondary" id="affair-btn-add-row" type="button">Ajouter une prestation</button>
                                 </div>
-                                <?php $vatR = isset($quoteVatRate) && is_numeric($quoteVatRate) ? (float) $quoteVatRate : 20.0; ?>
                                 <div class="affair-field-full affair-quote-totals" style="margin-top:12px; padding:14px 16px; border:1px solid var(--border); border-radius:12px; background:var(--app-bg);">
                                     <div style="display:flex; flex-wrap:wrap; gap:12px 28px; align-items:baseline; font-size:15px;">
                                         <span><strong>Total devis HT</strong> : <span id="affair-total-ht">0,00</span> €</span>
                                         <span><strong>Total devis TTC</strong> : <span id="affair-total-ttc">0,00</span> €</span>
-                                        <span class="muted" style="font-size:13px;">TVA <?= htmlspecialchars((string) $vatR, ENT_QUOTES, 'UTF-8') ?> % (paramètres société)</span>
+                                        <span class="muted" style="font-size:13px;">TTC = somme par ligne. Défaut société : <?= htmlspecialchars((string) $vatR, ENT_QUOTES, 'UTF-8') ?> %.</span>
                                     </div>
                                 </div>
                                 <div class="field affair-field-full" style="margin-top:12px;">
@@ -179,6 +190,8 @@ declare(strict_types=1);
                                 'unitLabel' => isset($it['unitLabel']) && (string) $it['unitLabel'] !== '' ? (string) $it['unitLabel'] : null,
                                 'unitPrice' => (float) ($it['unitPrice'] ?? 0),
                                 'estimatedTimeMinutes' => $it['estimatedTimeMinutes'] ?? null,
+                                'defaultVatRate' => isset($it['defaultVatRate']) && is_numeric($it['defaultVatRate']) ? (float) $it['defaultVatRate'] : null,
+                                'defaultRevenueAccount' => isset($it['defaultRevenueAccount']) && (string) $it['defaultRevenueAccount'] !== '' ? (string) $it['defaultRevenueAccount'] : null,
                             ];
                         }, ($priceItems ?? [])), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
                         var vatRate = <?= json_encode(isset($quoteVatRate) && is_numeric($quoteVatRate) ? (float) $quoteVatRate : 20.0) ?>;
@@ -223,14 +236,20 @@ declare(strict_types=1);
                             if (!htEl || !ttcEl) return;
                             var rows = body.querySelectorAll('.affair-quote-item-row');
                             var ht = 0;
+                            var ttc = 0;
                             rows.forEach(function (row) {
                                 var qIn = row.querySelector('.affair-item-quantity');
                                 var pIn = row.querySelector('.affair-item-unit-price');
+                                var vatIn = row.querySelector('.affair-item-vat-rate');
                                 var q = parseFloat(qIn && qIn.value ? qIn.value : '0');
                                 var p = parseFloat(pIn && pIn.value ? pIn.value : '0');
-                                if (!isNaN(q) && !isNaN(p)) ht += q * p;
+                                if (isNaN(q) || isNaN(p)) return;
+                                var lineHt = q * p;
+                                ht += lineHt;
+                                var vr = parseFloat(vatIn && vatIn.value !== '' ? vatIn.value : String(vatRate));
+                                if (isNaN(vr)) vr = Number(vatRate) || 0;
+                                ttc += lineHt * (1 + vr / 100);
                             });
-                            var ttc = ht * (1 + (Number(vatRate) || 0) / 100);
                             htEl.textContent = formatMoney(ht);
                             ttcEl.textContent = formatMoney(ttc);
                         }
@@ -240,6 +259,8 @@ declare(strict_types=1);
                             var hiddenId = row.querySelector('.affair-item-price-item-id');
                             var unitPriceInput = row.querySelector('.affair-item-unit-price');
                             var timeInput = row.querySelector('.affair-item-est-time');
+                            var vatIn = row.querySelector('.affair-item-vat-rate');
+                            var accIn = row.querySelector('.affair-item-revenue-hidden');
                             var saveCb = row.querySelector('.affair-item-save-library');
                             if (!nameInput || !hiddenId) return;
 
@@ -252,10 +273,22 @@ declare(strict_types=1);
                                 } else {
                                     timeInput.value = '';
                                 }
+                                if (vatIn) {
+                                    if (match.defaultVatRate !== null && match.defaultVatRate !== undefined && !isNaN(Number(match.defaultVatRate))) {
+                                        vatIn.value = String(match.defaultVatRate);
+                                    } else {
+                                        vatIn.value = String(vatRate);
+                                    }
+                                }
+                                if (accIn) {
+                                    accIn.value = (match.defaultRevenueAccount !== null && match.defaultRevenueAccount !== undefined) ? String(match.defaultRevenueAccount) : '';
+                                }
                                 setRowUnitLabel(row, match.unitLabel);
                                 if (saveCb) saveCb.checked = false;
                             } else {
                                 hiddenId.value = '';
+                                if (vatIn) vatIn.value = String(vatRate);
+                                if (accIn) accIn.value = '';
                                 setRowUnitLabel(row, null);
                             }
                             recalcTotals();
@@ -286,7 +319,7 @@ declare(strict_types=1);
                                     recalcTotals();
                                 });
                             }
-                            ['.affair-item-quantity', '.affair-item-unit-price'].forEach(function (sel) {
+                            ['.affair-item-quantity', '.affair-item-unit-price', '.affair-item-vat-rate'].forEach(function (sel) {
                                 var el = row.querySelector(sel);
                                 if (el) el.addEventListener('input', recalcTotals);
                             });
@@ -300,6 +333,8 @@ declare(strict_types=1);
                                 if (input.type === 'checkbox') input.checked = false;
                                 else if (input.classList.contains('affair-item-quantity')) input.value = '1';
                                 else if (input.classList.contains('affair-item-unit-price')) input.value = '0';
+                                else if (input.classList.contains('affair-item-vat-rate')) input.value = String(vatRate);
+                                else if (input.classList.contains('affair-item-revenue-hidden')) input.value = '';
                                 else input.value = '';
                             });
                             var uLab = clone.querySelector('.affair-item-unit-label');

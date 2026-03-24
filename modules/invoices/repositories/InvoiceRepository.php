@@ -18,8 +18,9 @@ final class InvoiceRepository
     public static function normalizeInvoiceSelectRow(array $row): array
     {
         $canonical = [
-            'id', 'companyId', 'quoteId', 'clientId', 'invoiceNumber', 'title', 'dueDate',
+            'id', 'companyId', 'quoteId', 'projectId', 'clientId', 'invoiceNumber', 'title', 'dueDate',
             'status', 'amountTotal', 'amountPaid', 'paidAt', 'paymentToken', 'stripeCheckoutSessionId',
+            'accountingExportedAt', 'notes',
         ];
         $lower = [];
         foreach ($row as $k => $v) {
@@ -65,27 +66,30 @@ final class InvoiceRepository
 
         $sql = '
             SELECT
-                id,
-                quoteId,
-                invoiceNumber,
-                title,
-                dueDate,
-                status,
-                amountTotal,
-                amountPaid,
-                clientId,
-                (COALESCE(amountTotal,0) - COALESCE(amountPaid,0)) AS amountRemaining
-            FROM Invoice
-            WHERE companyId = :companyId
+                i.id,
+                i.quoteId,
+                i.invoiceNumber,
+                i.title,
+                i.dueDate,
+                i.status,
+                i.amountTotal,
+                i.amountPaid,
+                i.clientId,
+                i.accountingExportedAt,
+                (COALESCE(i.amountTotal,0) - COALESCE(i.amountPaid,0)) AS amountRemaining,
+                COALESCE(q.projectId, i.projectId) AS quoteProjectId
+            FROM Invoice i
+            LEFT JOIN Quote q ON q.id = i.quoteId AND q.companyId = i.companyId
+            WHERE i.companyId = :companyId
         ';
         $params = ['companyId' => $companyId];
 
         if ($status !== null && $status !== '') {
-            $sql .= ' AND status = :status ';
+            $sql .= ' AND i.status = :status ';
             $params['status'] = $status;
         }
 
-        $sql .= ' ORDER BY id DESC LIMIT :limit';
+        $sql .= ' ORDER BY i.id DESC LIMIT :limit';
 
         $stmt = $pdo->prepare($sql);
         $stmt->bindValue('companyId', $params['companyId'], PDO::PARAM_INT);
@@ -115,8 +119,9 @@ final class InvoiceRepository
                 i.amountTotal,
                 i.amountPaid,
                 i.clientId,
+                i.accountingExportedAt,
                 (COALESCE(i.amountTotal,0) - COALESCE(i.amountPaid,0)) AS amountRemaining,
-                q.projectId AS quoteProjectId
+                COALESCE(q.projectId, i.projectId) AS quoteProjectId
             FROM Invoice i
             LEFT JOIN Quote q
                 ON q.id = i.quoteId
@@ -201,8 +206,9 @@ final class InvoiceRepository
     }
 
     /**
-     * Même affaire : si une facture a déjà quitté le brouillon, ne pas lister d’autres brouillons
-     * parallèles (même facture logique, autre ligne de devis).
+     * Même affaire : si une facture liée à un devis a déjà quitté le brouillon, ne pas lister les
+     * brouillons encore associés à un devis (doublons / ancienne ligne). Les brouillons sans devis
+     * (factures manuelles) ne sont pas masqués.
      *
      * @param array<int, array<string, mixed>> $rows
      * @return array<int, array<string, mixed>>
@@ -222,7 +228,15 @@ final class InvoiceRepository
         $out = [];
         foreach ($rows as $row) {
             $pid = (int) ($row['quoteProjectId'] ?? 0);
-            if ($pid > 0 && ($projectHasNonDraft[$pid] ?? false) && (string) ($row['status'] ?? '') === 'brouillon') {
+            $quoteId = (int) ($row['quoteId'] ?? 0);
+            // Ne masquer que les brouillons liés à un devis : les factures manuelles (sans quoteId)
+            // restent visibles même si une autre facture de l’affaire n’est plus en brouillon.
+            if (
+                $quoteId > 0
+                && $pid > 0
+                && ($projectHasNonDraft[$pid] ?? false)
+                && (string) ($row['status'] ?? '') === 'brouillon'
+            ) {
                 continue;
             }
             $out[] = $row;
@@ -264,27 +278,21 @@ final class InvoiceRepository
                 i.amountPaid,
                 i.clientId,
                 i.paymentToken,
+                i.accountingExportedAt,
                 (COALESCE(i.amountTotal,0) - COALESCE(i.amountPaid,0)) AS amountRemaining,
-                q.projectId AS quoteProjectId
+                COALESCE(q.projectId, i.projectId) AS quoteProjectId
             FROM Invoice i
-            INNER JOIN Quote q
+            LEFT JOIN Quote q
                 ON q.id = i.quoteId
                AND q.companyId = i.companyId
-            INNER JOIN Project p
-                ON p.id = :projectId
-               AND p.companyId = i.companyId
             WHERE i.companyId = :companyId
               AND (
-                  q.projectId = p.id
-                  OR (
-                      q.projectId IS NULL
-                      AND q.clientId = p.clientId
-                      AND q.title IN (p.name, CONCAT(\'Devis - \', p.name))
-                  )
+                  i.projectId = :projectId1
+                  OR q.projectId = :projectId2
               )
         ';
 
-        $params = ['companyId' => $companyId, 'projectId' => $projectId];
+        $params = ['companyId' => $companyId, 'projectId1' => $projectId, 'projectId2' => $projectId];
 
         if ($status !== null && $status !== '') {
             $sql .= ' AND i.status = :status ';
@@ -295,7 +303,8 @@ final class InvoiceRepository
 
         $stmt = $pdo->prepare($sql);
         $stmt->bindValue('companyId', $params['companyId'], PDO::PARAM_INT);
-        $stmt->bindValue('projectId', $params['projectId'], PDO::PARAM_INT);
+        $stmt->bindValue('projectId1', $params['projectId1'], PDO::PARAM_INT);
+        $stmt->bindValue('projectId2', $params['projectId2'], PDO::PARAM_INT);
         if (isset($params['status'])) {
             $stmt->bindValue('status', $params['status'], PDO::PARAM_STR);
         }
@@ -318,6 +327,7 @@ final class InvoiceRepository
             SELECT
                 id,
                 quoteId,
+                projectId,
                 clientId,
                 invoiceNumber,
                 title,
@@ -327,7 +337,9 @@ final class InvoiceRepository
                 amountPaid,
                 paidAt,
                 paymentToken,
-                stripeCheckoutSessionId
+                stripeCheckoutSessionId,
+                accountingExportedAt,
+                notes
             FROM Invoice
             WHERE companyId = :companyId AND id = :invoiceId
             LIMIT 1
@@ -371,10 +383,20 @@ final class InvoiceRepository
                 $paymentToken = bin2hex(random_bytes(24));
             }
 
+            $stmtQ = $pdo->prepare('SELECT projectId FROM Quote WHERE companyId = :cid AND id = :qid LIMIT 1');
+            $stmtQ->execute(['cid' => $companyId, 'qid' => $quoteId]);
+            $rowQ = $stmtQ->fetch(PDO::FETCH_ASSOC);
+            $projectIdIns = null;
+            if (is_array($rowQ) && isset($rowQ['projectId'])) {
+                $p = (int) $rowQ['projectId'];
+                $projectIdIns = $p > 0 ? $p : null;
+            }
+
             $stmt = $pdo->prepare('
                 INSERT INTO Invoice (
                     companyId,
                     quoteId,
+                    projectId,
                     clientId,
                     invoiceNumber,
                     title,
@@ -390,6 +412,7 @@ final class InvoiceRepository
                 ) VALUES (
                     :companyId,
                     :quoteId,
+                    :projectId,
                     :clientId,
                     :invoiceNumber,
                     :title,
@@ -404,21 +427,71 @@ final class InvoiceRepository
                     NOW()
                 )
             ');
+            $stmtSum = $pdo->prepare('
+                SELECT COALESCE(SUM(lineTtc), 0) AS ttc
+                FROM QuoteItem
+                WHERE companyId = :companyId AND quoteId = :quoteId
+            ');
+            $stmtSum->execute(['companyId' => $companyId, 'quoteId' => $quoteId]);
+            $sumRow = $stmtSum->fetch(PDO::FETCH_ASSOC);
+            $ttcFromLines = round((float) ($sumRow['ttc'] ?? 0), 2);
+            $amountStored = $ttcFromLines > 0.0001 ? $ttcFromLines : (float) round($amountTotal, 2);
+
             $stmt->execute([
                 'companyId' => $companyId,
                 'quoteId' => $quoteId,
+                'projectId' => $projectIdIns,
                 'clientId' => $clientId,
                 'invoiceNumber' => $invoiceNumber,
                 'title' => $title,
                 'dueDate' => $dueDateYmd,
                 'status' => $status,
-                'amountTotal' => (float) round($amountTotal, 2),
+                'amountTotal' => $amountStored,
                 'createdByUserId' => $createdByUserId,
                 'notes' => $notes,
                 'paymentToken' => $paymentToken,
             ]);
 
             $invoiceId = (int) $pdo->lastInsertId();
+
+            $stmtCopy = $pdo->prepare('
+                INSERT INTO InvoiceItem (
+                    companyId,
+                    invoiceId,
+                    priceLibraryItemId,
+                    description,
+                    quantity,
+                    unitPrice,
+                    lineTotal,
+                    vatRate,
+                    revenueAccount,
+                    lineVat,
+                    lineTtc,
+                    lineSort
+                )
+                SELECT
+                    qi.companyId,
+                    :invoiceId,
+                    qi.priceLibraryItemId,
+                    qi.description,
+                    qi.quantity,
+                    qi.unitPrice,
+                    qi.lineTotal,
+                    qi.vatRate,
+                    qi.revenueAccount,
+                    qi.lineVat,
+                    qi.lineTtc,
+                    qi.id
+                FROM QuoteItem qi
+                WHERE qi.companyId = :cid
+                  AND qi.quoteId = :qid
+            ');
+            $stmtCopy->execute([
+                'invoiceId' => $invoiceId,
+                'cid' => $companyId,
+                'qid' => $quoteId,
+            ]);
+
             $pdo->commit();
             return $invoiceId;
         } catch (\Throwable $e) {
@@ -480,6 +553,7 @@ final class InvoiceRepository
         $stmt = $pdo->prepare('
             UPDATE Invoice
             SET status = "envoyee",
+                sentAt = COALESCE(sentAt, NOW()),
                 updatedAt = NOW()
             WHERE companyId = :companyId
               AND id = :invoiceId
@@ -489,6 +563,297 @@ final class InvoiceRepository
             'companyId' => $companyId,
             'invoiceId' => $invoiceId,
         ]);
+    }
+
+    /**
+     * Marque la facture comme exportée en comptabilité (écritures générées).
+     */
+    public function markAccountingExported(int $companyId, int $invoiceId): void
+    {
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            UPDATE Invoice
+            SET accountingExportedAt = NOW(),
+                updatedAt = NOW()
+            WHERE companyId = :companyId
+              AND id = :invoiceId
+              AND status IN ("envoyee", "partiellement_payee", "payee", "echue")
+        ');
+        $stmt->execute([
+            'companyId' => $companyId,
+            'invoiceId' => $invoiceId,
+        ]);
+    }
+
+    /**
+     * Factures non brouillon, non annulées (base export écritures).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listForAccountingLines(int $companyId, ?bool $onlyNotExported = null, int $limit = 500): array
+    {
+        $pdo = Connection::pdo();
+        $sql = '
+            SELECT
+                id,
+                quoteId,
+                clientId,
+                invoiceNumber,
+                title,
+                dueDate,
+                status,
+                amountTotal,
+                amountPaid,
+                accountingExportedAt
+            FROM Invoice
+            WHERE companyId = :companyId
+              AND status IN ("envoyee", "partiellement_payee", "payee", "echue")
+        ';
+        if ($onlyNotExported === true) {
+            $sql .= ' AND accountingExportedAt IS NULL ';
+        }
+        $sql .= ' ORDER BY id ASC LIMIT :limit';
+        $stmt = $pdo->prepare($sql);
+        $stmt->bindValue('companyId', $companyId, PDO::PARAM_INT);
+        $stmt->bindValue('limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
+     * Factures éligibles export comptable parmi une liste d’IDs (même filtres statut que listForAccountingLines).
+     *
+     * @param array<int, int|string> $invoiceIds
+     * @return array<int, array<string, mixed>>
+     */
+    public function listForAccountingByIds(int $companyId, array $invoiceIds, ?bool $onlyNotExported = null): array
+    {
+        $ids = [];
+        foreach ($invoiceIds as $raw) {
+            $id = is_numeric($raw) ? (int) $raw : 0;
+            if ($id > 0) {
+                $ids[$id] = $id;
+            }
+        }
+        if ($ids === []) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $sql = "
+            SELECT
+                id,
+                quoteId,
+                clientId,
+                invoiceNumber,
+                title,
+                dueDate,
+                status,
+                amountTotal,
+                amountPaid,
+                accountingExportedAt
+            FROM Invoice
+            WHERE companyId = ?
+              AND id IN ($placeholders)
+              AND status IN ('envoyee', 'partiellement_payee', 'payee', 'echue')
+        ";
+        if ($onlyNotExported === true) {
+            $sql .= ' AND accountingExportedAt IS NULL ';
+        }
+        $sql .= ' ORDER BY id ASC';
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare($sql);
+        $bind = array_merge([$companyId], array_values($ids));
+        $stmt->execute($bind);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function updateDraftInvoiceMeta(int $companyId, int $invoiceId, string $title, string $dueDateYmd, ?string $notes): bool
+    {
+        $cur = $this->findByCompanyIdAndId($companyId, $invoiceId);
+        if (!is_array($cur)) {
+            return false;
+        }
+        $st = (string) ($cur['status'] ?? '');
+        if (!in_array($st, ['brouillon', 'envoyee'], true)) {
+            return false;
+        }
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            UPDATE Invoice
+            SET title = :title,
+                dueDate = :dueDate,
+                notes = :notes,
+                updatedAt = NOW()
+            WHERE companyId = :companyId
+              AND id = :invoiceId
+              AND status IN (\'brouillon\', \'envoyee\')
+        ');
+        $stmt->execute([
+            'title' => $title,
+            'dueDate' => $dueDateYmd,
+            'notes' => $notes !== null && $notes !== '' ? $notes : null,
+            'companyId' => $companyId,
+            'invoiceId' => $invoiceId,
+        ]);
+
+        return true;
+    }
+
+    /**
+     * Recalcule amountTotal (TTC) depuis les lignes InvoiceItem (facture brouillon).
+     */
+    public function syncDraftAmountTotalFromItems(int $companyId, int $invoiceId): void
+    {
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            UPDATE Invoice i
+            SET i.amountTotal = (
+                SELECT COALESCE(SUM(ii.lineTtc), 0)
+                FROM InvoiceItem ii
+                WHERE ii.companyId = i.companyId AND ii.invoiceId = i.id
+            ),
+            i.updatedAt = NOW()
+            WHERE i.companyId = :companyId
+              AND i.id = :invoiceId
+              AND i.status IN (\'brouillon\', \'envoyee\')
+        ');
+        $stmt->execute([
+            'companyId' => $companyId,
+            'invoiceId' => $invoiceId,
+        ]);
+    }
+
+    /**
+     * Facture rattachée à une affaire (directement ou via le devis).
+     */
+    public function invoiceBelongsToProject(int $companyId, int $invoiceId, int $projectId): bool
+    {
+        if ($projectId <= 0) {
+            return false;
+        }
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            SELECT 1
+            FROM Invoice i
+            LEFT JOIN Quote q ON q.id = i.quoteId AND q.companyId = i.companyId
+            WHERE i.companyId = :companyId
+              AND i.id = :invoiceId
+              AND (
+                  i.projectId = :projectId1
+                  OR q.projectId = :projectId2
+              )
+            LIMIT 1
+        ');
+        $stmt->execute([
+            'companyId' => $companyId,
+            'invoiceId' => $invoiceId,
+            'projectId1' => $projectId,
+            'projectId2' => $projectId,
+        ]);
+
+        return (bool) $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Facture manuelle (sans devis) pour une affaire (avoir, régularisation, etc.).
+     */
+    public function createManualInvoiceForProject(
+        int $companyId,
+        int $projectId,
+        int $clientId,
+        int $createdByUserId,
+        string $title,
+        string $dueDateYmd,
+        ?string $notes
+    ): int {
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            SELECT id, clientId FROM Project
+            WHERE companyId = :companyId AND id = :projectId
+            LIMIT 1
+        ');
+        $stmt->execute([
+            'companyId' => $companyId,
+            'projectId' => $projectId,
+        ]);
+        $pr = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($pr) || (int) ($pr['clientId'] ?? 0) !== $clientId) {
+            throw new \InvalidArgumentException('project_client_mismatch');
+        }
+
+        $invoiceNumber = 'FA-' . date('YmdHis') . '-' . random_int(100, 999);
+        $paymentToken = bin2hex(random_bytes(24));
+        $stmtIns = $pdo->prepare('
+            INSERT INTO Invoice (
+                companyId,
+                quoteId,
+                projectId,
+                clientId,
+                invoiceNumber,
+                title,
+                dueDate,
+                status,
+                amountTotal,
+                amountPaid,
+                createdByUserId,
+                notes,
+                paymentToken,
+                createdAt,
+                updatedAt
+            ) VALUES (
+                :companyId,
+                NULL,
+                :projectId,
+                :clientId,
+                :invoiceNumber,
+                :title,
+                :dueDate,
+                \'brouillon\',
+                0,
+                0,
+                :createdByUserId,
+                :notes,
+                :paymentToken,
+                NOW(),
+                NOW()
+            )
+        ');
+        $stmtIns->execute([
+            'companyId' => $companyId,
+            'projectId' => $projectId,
+            'clientId' => $clientId,
+            'invoiceNumber' => $invoiceNumber,
+            'title' => $title,
+            'dueDate' => $dueDateYmd,
+            'createdByUserId' => $createdByUserId,
+            'notes' => $notes !== null && $notes !== '' ? $notes : null,
+            'paymentToken' => $paymentToken,
+        ]);
+
+        return (int) $pdo->lastInsertId();
+    }
+
+    /**
+     * Supprime une facture brouillon sans devis (création manuelle). Pas de paiement attendu sur un brouillon.
+     */
+    public function deleteManualDraftInvoice(int $companyId, int $invoiceId): bool
+    {
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            DELETE FROM Invoice
+            WHERE companyId = :companyId
+              AND id = :invoiceId
+              AND status = \'brouillon\'
+              AND quoteId IS NULL
+        ');
+        $stmt->execute([
+            'companyId' => $companyId,
+            'invoiceId' => $invoiceId,
+        ]);
+
+        return $stmt->rowCount() > 0;
     }
 
     /**
@@ -514,7 +879,8 @@ final class InvoiceRepository
                 amountTotal,
                 amountPaid,
                 paymentToken,
-                stripeCheckoutSessionId
+                stripeCheckoutSessionId,
+                accountingExportedAt
             FROM Invoice
             WHERE companyId = :companyId
               AND stripeCheckoutSessionId = :sid
@@ -552,7 +918,8 @@ final class InvoiceRepository
                 amountTotal,
                 amountPaid,
                 paymentToken,
-                stripeCheckoutSessionId
+                stripeCheckoutSessionId,
+                accountingExportedAt
             FROM Invoice
             WHERE paymentToken = :token
             LIMIT 1

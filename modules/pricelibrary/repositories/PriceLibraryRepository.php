@@ -13,7 +13,8 @@ final class PriceLibraryRepository
         $pdo = Connection::pdo();
 
         $sql = '
-            SELECT id, code, name, description, unitLabel, unitPrice, estimatedTimeMinutes, status
+            SELECT id, code, name, description, unitLabel, unitPrice, defaultVatRate, defaultRevenueAccount,
+                   estimatedTimeMinutes, status
             FROM PriceLibraryItem
             WHERE companyId = :companyId
         ';
@@ -37,6 +38,8 @@ final class PriceLibraryRepository
         ?string $description,
         ?string $unitLabel,
         float $unitPrice,
+        ?float $defaultVatRate,
+        ?string $defaultRevenueAccount,
         ?int $estimatedTimeMinutes,
         string $status = 'active'
     ): int {
@@ -44,9 +47,11 @@ final class PriceLibraryRepository
 
         $stmt = $pdo->prepare('
             INSERT INTO PriceLibraryItem (
-                companyId, code, name, description, unitLabel, unitPrice, estimatedTimeMinutes, status, createdAt, updatedAt
+                companyId, code, name, description, unitLabel, unitPrice, defaultVatRate, defaultRevenueAccount,
+                estimatedTimeMinutes, status, createdAt, updatedAt
             ) VALUES (
-                :companyId, :code, :name, :description, :unitLabel, :unitPrice, :estimatedTimeMinutes, :status, NOW(), NOW()
+                :companyId, :code, :name, :description, :unitLabel, :unitPrice, :defaultVatRate, :defaultRevenueAccount,
+                :estimatedTimeMinutes, :status, NOW(), NOW()
             )
         ');
         $stmt->execute([
@@ -56,6 +61,8 @@ final class PriceLibraryRepository
             'description' => $description !== '' ? $description : null,
             'unitLabel' => $unitLabel !== '' ? $unitLabel : null,
             'unitPrice' => round($unitPrice, 2),
+            'defaultVatRate' => $defaultVatRate !== null ? round($defaultVatRate, 2) : null,
+            'defaultRevenueAccount' => $defaultRevenueAccount !== null && trim($defaultRevenueAccount) !== '' ? trim($defaultRevenueAccount) : null,
             'estimatedTimeMinutes' => $estimatedTimeMinutes,
             'status' => $status === 'inactive' ? 'inactive' : 'active',
         ]);
@@ -67,7 +74,8 @@ final class PriceLibraryRepository
     {
         $pdo = Connection::pdo();
         $stmt = $pdo->prepare('
-            SELECT id, companyId, code, name, description, unitLabel, unitPrice, estimatedTimeMinutes, status
+            SELECT id, companyId, code, name, description, unitLabel, unitPrice, defaultVatRate, defaultRevenueAccount,
+                   estimatedTimeMinutes, status
             FROM PriceLibraryItem
             WHERE companyId = :companyId AND id = :id
             LIMIT 1
@@ -83,6 +91,8 @@ final class PriceLibraryRepository
      *   description:?string,
      *   unitLabel:?string,
      *   unitPrice:float,
+     *   defaultVatRate:?float|"",
+     *   defaultRevenueAccount:?string,
      *   estimatedTimeMinutes:?int,
      *   status:string
      * } $data
@@ -90,12 +100,26 @@ final class PriceLibraryRepository
     public function updateByCompanyAndId(int $companyId, int $id, array $data): void
     {
         $pdo = Connection::pdo();
+        $defVatSql = null;
+        if (\array_key_exists('defaultVatRate', $data)) {
+            $rawVat = $data['defaultVatRate'];
+            if ($rawVat === null || $rawVat === '') {
+                $defVatSql = null;
+            } elseif (is_numeric($rawVat)) {
+                $defVatSql = round((float) $rawVat, 2);
+            }
+        }
+        $defAcc = isset($data['defaultRevenueAccount']) ? trim((string) $data['defaultRevenueAccount']) : '';
+        $defAccSql = $defAcc !== '' ? $defAcc : null;
+
         $stmt = $pdo->prepare('
             UPDATE PriceLibraryItem SET
                 name = :name,
                 description = :description,
                 unitLabel = :unitLabel,
                 unitPrice = :unitPrice,
+                defaultVatRate = :defaultVatRate,
+                defaultRevenueAccount = :defaultRevenueAccount,
                 estimatedTimeMinutes = :estimatedTimeMinutes,
                 status = :status,
                 updatedAt = NOW()
@@ -108,6 +132,8 @@ final class PriceLibraryRepository
             'description' => $data['description'],
             'unitLabel' => $data['unitLabel'],
             'unitPrice' => round($data['unitPrice'], 2),
+            'defaultVatRate' => $defVatSql,
+            'defaultRevenueAccount' => $defAccSql,
             'estimatedTimeMinutes' => $data['estimatedTimeMinutes'],
             'status' => $data['status'] === 'inactive' ? 'inactive' : 'active',
         ]);

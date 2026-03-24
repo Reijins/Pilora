@@ -38,9 +38,16 @@ declare(strict_types=1);
                     <input class="input" id="due_date" name="due_date" type="date" value="<?= htmlspecialchars((string) ($dueDateYmd ?? ''), ENT_QUOTES, 'UTF-8') ?>" required>
 
                     <label class="label">Montants (depuis le devis)</label>
+                    <?php $vbr = is_array($invoiceTotals['vat_by_rate'] ?? null) ? $invoiceTotals['vat_by_rate'] : []; ?>
                     <div class="kv-grid" style="margin-bottom:10px;">
                         <div class="kv"><div class="kv-label">Total HT</div><div class="kv-value"><?= htmlspecialchars(number_format((float) ($invoiceTotals['ht'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</div></div>
-                        <div class="kv"><div class="kv-label">TVA (<?= htmlspecialchars((string) ($invoiceTotals['vat_rate'] ?? 20), ENT_QUOTES, 'UTF-8') ?> %)</div><div class="kv-value"><?= htmlspecialchars(number_format((float) ($invoiceTotals['vat_amount'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</div></div>
+                        <?php if ($vbr !== []): ?>
+                            <?php foreach ($vbr as $vr): ?>
+                                <div class="kv"><div class="kv-label">TVA <?= htmlspecialchars(number_format((float) ($vr['rate'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> %</div><div class="kv-value"><?= htmlspecialchars(number_format((float) ($vr['vat'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> € <span class="muted">(HT <?= htmlspecialchars(number_format((float) ($vr['ht'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?>)</span></div></div>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <div class="kv"><div class="kv-label">TVA (<?= htmlspecialchars((string) ($invoiceTotals['vat_rate'] ?? 20), ENT_QUOTES, 'UTF-8') ?> %)</div><div class="kv-value"><?= htmlspecialchars(number_format((float) ($invoiceTotals['vat_amount'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</div></div>
+                        <?php endif; ?>
                         <div class="kv"><div class="kv-label">Total TTC (facturé)</div><div class="kv-value"><strong><?= htmlspecialchars(number_format((float) ($invoiceTotals['ttc'] ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</strong></div></div>
                     </div>
 

@@ -12,7 +12,9 @@ use Core\View\View;
 use Modules\Clients\Repositories\ClientRepository;
 use Modules\Companies\Repositories\CompanyRepository;
 use Modules\Contacts\Repositories\ContactRepository;
+use Modules\Invoices\Repositories\InvoiceItemRepository;
 use Modules\Invoices\Repositories\InvoiceRepository;
+use Modules\Invoices\Services\DocumentTotalsService;
 use Modules\Invoices\Services\InvoiceAmountsService;
 use Modules\Invoices\Services\InvoicePaidReceiptEmailService;
 use Modules\Projects\Repositories\ProjectRepository;
@@ -77,14 +79,14 @@ final class PublicInvoiceController extends BaseController
         }
 
         $quoteRepo = new QuoteRepository();
-        $items = $quoteId > 0
-            ? $quoteRepo->listItemsByCompanyIdAndQuoteId($companyId, $quoteId)
-            : [];
+        $itemRepo = new InvoiceItemRepository();
+        $items = $itemRepo->listByCompanyIdAndInvoiceId($companyId, $invoiceId);
+        if ($items === [] && $quoteId > 0) {
+            $items = $quoteRepo->listItemsByCompanyIdAndQuoteId($companyId, $quoteId);
+        }
         $client = (new ClientRepository())->findByCompanyIdAndId($companyId, (int) ($invoice['clientId'] ?? 0));
         $contacts = (new ContactRepository())->listByCompanyIdAndClientId($companyId, (int) ($invoice['clientId'] ?? 0));
-        $totals = $quoteId > 0
-            ? InvoiceAmountsService::fromQuote($companyId, $quoteId)
-            : ['ht' => 0.0, 'vat_rate' => 20.0, 'vat_amount' => 0.0, 'ttc' => (float) ($invoice['amountTotal'] ?? 0)];
+        $totals = InvoiceAmountsService::displayTotalsForInvoice($companyId, $invoice);
 
         $project = null;
         if ($quoteId > 0) {
@@ -175,12 +177,12 @@ final class PublicInvoiceController extends BaseController
             \Stripe\Stripe::setApiKey($secret);
             $invNo = (string) ($invoice['invoiceNumber'] ?? ('FA-' . $invoiceId));
             $quoteId = (int) ($invoice['quoteId'] ?? 0);
-            $quoteItems = [];
-            if ($quoteId > 0) {
+            $docItems = (new InvoiceItemRepository())->listByCompanyIdAndInvoiceId($companyId, $invoiceId);
+            if ($docItems === [] && $quoteId > 0) {
                 try {
-                    $quoteItems = (new QuoteRepository())->listItemsByCompanyIdAndQuoteId($companyId, $quoteId);
+                    $docItems = (new QuoteRepository())->listItemsByCompanyIdAndQuoteId($companyId, $quoteId);
                 } catch (\Throwable) {
-                    $quoteItems = [];
+                    $docItems = [];
                 }
             }
 
@@ -189,7 +191,7 @@ final class PublicInvoiceController extends BaseController
                 amountRemaining: $amountRemaining,
                 companyId: $companyId,
                 quoteId: $quoteId,
-                quoteItems: $quoteItems,
+                quoteItems: $docItems,
             );
 
             $sessionParams = [
@@ -272,16 +274,11 @@ final class PublicInvoiceController extends BaseController
             'quantity' => 1,
         ]];
 
-        if ($quoteId <= 0 || $quoteItems === []) {
+        if ($quoteItems === []) {
             return $fallback;
         }
 
-        try {
-            $totals = InvoiceAmountsService::fromQuote($companyId, $quoteId);
-        } catch (\Throwable) {
-            return $fallback;
-        }
-
+        $totals = DocumentTotalsService::aggregate($quoteItems);
         $ttc = (float) $totals['ttc'];
         if ($ttc < 0.0001) {
             return $fallback;
@@ -292,7 +289,9 @@ final class PublicInvoiceController extends BaseController
             $ratio = 1.0;
         }
 
-        $vatRateStr = number_format((float) $totals['vat_rate'], 2, ',', ' ');
+        $vatRateStr = count($totals['vat_by_rate']) > 1
+            ? 'multi-taux'
+            : number_format((float) $totals['vat_rate'], 2, ',', ' ');
         $prorataSuffix = $ratio < 0.999 ? ' (au prorata du solde)' : '';
 
         // Trop de lignes pour Stripe Checkout (max 100)

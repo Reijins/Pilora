@@ -43,6 +43,10 @@ declare(strict_types=1);
                     <label class="label" for="notes">Notes</label>
                     <input class="input" id="notes" name="notes" type="text">
 
+                    <label class="label" for="accounting_customer_account">Compte client (comptabilité)</label>
+                    <input class="input" id="accounting_customer_account" name="accounting_customer_account" type="text" maxlength="32" placeholder="411xxx — laisser vide pour utiliser le défaut société">
+                    <p class="muted" style="margin:4px 0 0;font-size:13px;">Optionnel. Sert pour l’export des écritures (grand-livre / tiers client).</p>
+
                     <label class="checkbox-item" id="create_contact_wrapper" style="padding:0; margin-top:4px; display:none;">
                         <input type="checkbox" name="create_contact_with_client" value="1">
                         <span>Créer en tant que contact</span>

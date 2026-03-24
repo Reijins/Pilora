@@ -17,11 +17,11 @@ declare(strict_types=1);
                 <?php $basePath = isset($basePath) && is_string($basePath) ? $basePath : ''; ?>
                 <?php $currentTab = is_string($activeTab ?? null) ? (string) $activeTab : 'smtp'; ?>
                 <?php if (!empty($flashError)): ?>
-                    <div class="alert alert-danger" style="margin-bottom:12px;"><?= htmlspecialchars((string) $flashError, ENT_QUOTES, 'UTF-8') ?></div>
+                    <div class="alert alert-danger" style="margin-bottom:12px;"><?= htmlspecialchars(rawurldecode((string) $flashError), ENT_QUOTES, 'UTF-8') ?></div>
                 <?php endif; ?>
                 <?php if (!empty($flashMessage)): ?>
                     <div class="alert alert-success" style="margin-bottom:12px; border-color: var(--success); background: rgba(22,163,74,.08); color: var(--success);">
-                        <?= htmlspecialchars((string) $flashMessage, ENT_QUOTES, 'UTF-8') ?>
+                        <?= htmlspecialchars(rawurldecode((string) $flashMessage), ENT_QUOTES, 'UTF-8') ?>
                     </div>
                 <?php endif; ?>
 
@@ -29,6 +29,7 @@ declare(strict_types=1);
                     <a class="btn btn-secondary settings-tab <?= $currentTab === 'general' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($basePath . '/settings?tab=general', ENT_QUOTES, 'UTF-8') ?>">Paramètres généraux</a>
                     <a class="btn btn-secondary settings-tab <?= $currentTab === 'smtp' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($basePath . '/settings?tab=smtp', ENT_QUOTES, 'UTF-8') ?>">SMTP</a>
                     <a class="btn btn-secondary settings-tab <?= $currentTab === 'email_templates' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($basePath . '/settings?tab=email_templates', ENT_QUOTES, 'UTF-8') ?>">Modèles emails</a>
+                    <a class="btn btn-secondary settings-tab <?= $currentTab === 'accounting' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($basePath . '/settings?tab=accounting', ENT_QUOTES, 'UTF-8') ?>">Compte comptable</a>
                     <a class="btn btn-secondary settings-tab <?= $currentTab === 'billing' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($basePath . '/settings?tab=billing', ENT_QUOTES, 'UTF-8') ?>">Facturation</a>
                     <a class="btn btn-secondary settings-tab <?= $currentTab === 'users' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($basePath . '/settings?tab=users', ENT_QUOTES, 'UTF-8') ?>">Utilisateurs</a>
                     <a class="btn btn-secondary settings-tab <?= $currentTab === 'rbac' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($basePath . '/settings?tab=rbac', ENT_QUOTES, 'UTF-8') ?>">Rôles & permissions</a>
@@ -324,6 +325,90 @@ declare(strict_types=1);
                         });
                     })();
                     </script>
+                <?php elseif ($currentTab === 'accounting'): ?>
+                    <?php $smtpAcc = is_array($smtpSettings ?? null) ? $smtpSettings : []; ?>
+                    <?php
+                        $vatPairsUi = \Modules\Settings\Services\AccountingSettingsService::parseVatRateAccounts($smtpAcc['vat_rate_accounts'] ?? '[]');
+                        if ($vatPairsUi === []) {
+                            $vatPairsUi = [['rate' => '', 'account' => '']];
+                        }
+                    ?>
+                    <div class="settings-panel">
+                        <h3 style="margin:0 0 10px;">Compte comptable</h3>
+                        <p class="muted" style="margin:0 0 14px;">Comptes de TVA collectée par taux (export CSV), compte tiers client et compte de ventes par défaut.</p>
+                        <form method="POST" action="<?= htmlspecialchars($basePath . '/settings/smtp/update', ENT_QUOTES, 'UTF-8') ?>" class="form" style="max-width:none;" id="form-accounting-settings">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                            <input type="hidden" name="settings_tab" value="accounting">
+                            <div class="field contact-field-full">
+                                <label class="label">Comptes TVA par taux</label>
+                                <div style="overflow-x:auto;">
+                                    <table class="table" id="vat-accounts-table" style="min-width:420px;">
+                                        <thead>
+                                            <tr>
+                                                <th style="width:140px;">Taux TVA (%)</th>
+                                                <th>Numéro de compte</th>
+                                                <th style="width:48px;"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="vat-accounts-body">
+                                            <?php foreach ($vatPairsUi as $idx => $vp): ?>
+                                                <tr class="vat-account-row">
+                                                    <td>
+                                                        <input class="input" name="vat_account_rate[]" type="number" step="0.01" min="0" max="100" placeholder="20" value="<?= isset($vp['rate']) ? htmlspecialchars((string) $vp['rate'], ENT_QUOTES, 'UTF-8') : '' ?>">
+                                                    </td>
+                                                    <td>
+                                                        <input class="input" name="vat_account_number[]" type="text" maxlength="32" placeholder="44571000" value="<?= htmlspecialchars((string) ($vp['account'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                                    </td>
+                                                    <td style="text-align:center;">
+                                                        <button type="button" class="btn btn-danger btn-icon js-vat-row-remove" aria-label="Supprimer la ligne" title="Supprimer">×</button>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <button type="button" class="btn btn-secondary" id="vat-accounts-add-row" style="margin-top:8px;">Ajouter un taux</button>
+                            </div>
+                            <div class="field">
+                                <label class="label" for="acc_default_client_account">Compte client (défaut)</label>
+                                <input class="input" id="acc_default_client_account" name="default_client_account" type="text" maxlength="32" placeholder="41100000" value="<?= htmlspecialchars(trim((string) ($smtpAcc['default_client_account'] ?? '')), ENT_QUOTES, 'UTF-8') ?>">
+                            </div>
+                            <div class="field">
+                                <label class="label" for="acc_default_revenue_account">Compte ventes (si ligne sans compte)</label>
+                                <input class="input" id="acc_default_revenue_account" name="default_revenue_account" type="text" maxlength="32" placeholder="70600000" value="<?= htmlspecialchars(trim((string) ($smtpAcc['default_revenue_account'] ?? '')), ENT_QUOTES, 'UTF-8') ?>">
+                            </div>
+                            <button class="btn btn-primary" type="submit">Enregistrer</button>
+                        </form>
+                        <template id="tpl-vat-account-row">
+                            <tr class="vat-account-row">
+                                <td><input class="input" name="vat_account_rate[]" type="number" step="0.01" min="0" max="100" placeholder="20"></td>
+                                <td><input class="input" name="vat_account_number[]" type="text" maxlength="32" placeholder="44571000" value=""></td>
+                                <td style="text-align:center;"><button type="button" class="btn btn-danger btn-icon js-vat-row-remove" aria-label="Supprimer" title="Supprimer">×</button></td>
+                            </tr>
+                        </template>
+                        <script>
+                            (function () {
+                                var body = document.getElementById('vat-accounts-body');
+                                var tpl = document.getElementById('tpl-vat-account-row');
+                                var addBtn = document.getElementById('vat-accounts-add-row');
+                                if (!body || !tpl || !addBtn) return;
+                                function bindRemove(row) {
+                                    row.querySelectorAll('.js-vat-row-remove').forEach(function (b) {
+                                        b.addEventListener('click', function () {
+                                            if (body.querySelectorAll('.vat-account-row').length <= 1) return;
+                                            row.remove();
+                                        });
+                                    });
+                                }
+                                body.querySelectorAll('.vat-account-row').forEach(bindRemove);
+                                addBtn.addEventListener('click', function () {
+                                    var node = tpl.content.cloneNode(true);
+                                    var row = node.querySelector('tr');
+                                    if (row) { body.appendChild(row); bindRemove(row); }
+                                });
+                            })();
+                        </script>
+                    </div>
                 <?php elseif ($currentTab === 'billing'): ?>
                     <?php
                         $company = is_array($company ?? null) ? $company : [];

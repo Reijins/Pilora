@@ -126,6 +126,15 @@ final class PriceLibraryController extends BaseController
         $unitPriceRaw = $request->getBodyParam('unit_price', '0');
         $estimatedTimeRaw = $request->getBodyParam('estimated_time_hours', null);
         $status = trim((string) $request->getBodyParam('status', 'active'));
+        $defaultVatRaw = str_replace(',', '.', trim((string) $request->getBodyParam('default_vat_rate', '')));
+        $defaultVat = null;
+        if ($defaultVatRaw !== '') {
+            if (!is_numeric($defaultVatRaw)) {
+                return Response::redirect('price-library/new?err=' . rawurlencode('Taux de TVA défaut invalide.'));
+            }
+            $defaultVat = max(0.0, min(100.0, (float) $defaultVatRaw));
+        }
+        $defaultRevAcc = trim((string) $request->getBodyParam('default_revenue_account', ''));
 
         if ($name === '') {
             return Response::redirect('price-library/new?err=' . rawurlencode('Le nom est obligatoire.'));
@@ -149,6 +158,8 @@ final class PriceLibraryController extends BaseController
                 description: $description !== '' ? $description : null,
                 unitLabel: $unitLabel !== '' ? $unitLabel : null,
                 unitPrice: $unitPrice,
+                defaultVatRate: $defaultVat,
+                defaultRevenueAccount: $defaultRevAcc !== '' ? $defaultRevAcc : null,
                 estimatedTimeMinutes: $estimatedTime,
                 status: $status
             );
@@ -231,6 +242,15 @@ final class PriceLibraryController extends BaseController
         if ($unitPrice < 0) {
             return Response::redirect('price-library/edit?id=' . $id . '&err=' . rawurlencode('Prix unitaire invalide.'));
         }
+        $defaultVatRaw = str_replace(',', '.', trim((string) $request->getBodyParam('default_vat_rate', '')));
+        $defaultVatVal = null;
+        if ($defaultVatRaw !== '') {
+            if (!is_numeric($defaultVatRaw)) {
+                return Response::redirect('price-library/edit?id=' . $id . '&err=' . rawurlencode('Taux de TVA défaut invalide.'));
+            }
+            $defaultVatVal = max(0.0, min(100.0, (float) $defaultVatRaw));
+        }
+        $defaultRevAcc = trim((string) $request->getBodyParam('default_revenue_account', ''));
         try {
             $estimatedTime = self::parseEstimatedTimeHoursToMinutes($estimatedTimeRaw);
         } catch (\InvalidArgumentException) {
@@ -243,6 +263,8 @@ final class PriceLibraryController extends BaseController
                 'description' => $description !== '' ? $description : null,
                 'unitLabel' => $unitLabel !== '' ? $unitLabel : null,
                 'unitPrice' => $unitPrice,
+                'defaultVatRate' => $defaultVatVal,
+                'defaultRevenueAccount' => $defaultRevAcc,
                 'estimatedTimeMinutes' => $estimatedTime,
                 'status' => $status === 'inactive' ? 'inactive' : 'active',
             ]);
@@ -319,11 +341,18 @@ final class PriceLibraryController extends BaseController
         }
 
         try {
+            $defVat = null;
+            if (isset($row['defaultVatRate']) && is_numeric($row['defaultVatRate'])) {
+                $defVat = max(0.0, min(100.0, (float) $row['defaultVatRate']));
+            }
+            $defAcc = isset($row['defaultRevenueAccount']) ? trim((string) $row['defaultRevenueAccount']) : '';
             $repo->updateByCompanyAndId($userContext->companyId, $id, [
                 'name' => (string) ($row['name'] ?? ''),
                 'description' => isset($row['description']) ? (string) $row['description'] : null,
                 'unitLabel' => isset($row['unitLabel']) ? (string) $row['unitLabel'] : null,
                 'unitPrice' => (float) ($row['unitPrice'] ?? 0),
+                'defaultVatRate' => $defVat,
+                'defaultRevenueAccount' => $defAcc,
                 'estimatedTimeMinutes' => isset($row['estimatedTimeMinutes']) && $row['estimatedTimeMinutes'] !== null
                     ? (int) $row['estimatedTimeMinutes']
                     : null,

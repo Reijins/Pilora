@@ -160,6 +160,38 @@ final class Bootstrap
             return (new InvoicesController())->export($request, $userContext);
         });
 
+        $router->get('/invoices/export-accounting', function (Request $request, UserContext $userContext): Response {
+            return (new InvoicesController())->exportAccounting($request, $userContext);
+        });
+
+        $router->post('/invoices/export-accounting', function (Request $request, UserContext $userContext): Response {
+            return (new InvoicesController())->exportAccounting($request, $userContext);
+        });
+
+        $router->get('/invoices/show', function (Request $request, UserContext $userContext): Response {
+            return (new InvoicesController())->show($request, $userContext);
+        });
+
+        $router->get('/invoices/edit', function (Request $request, UserContext $userContext): Response {
+            return (new InvoicesController())->edit($request, $userContext);
+        });
+
+        $router->post('/invoices/save-draft', function (Request $request, UserContext $userContext): Response {
+            return (new InvoicesController())->saveDraft($request, $userContext);
+        });
+
+        $router->get('/invoices/new-manual', function (Request $request, UserContext $userContext): Response {
+            return (new InvoicesController())->newManualFromProject($request, $userContext);
+        });
+
+        $router->post('/invoices/create-manual', function (Request $request, UserContext $userContext): Response {
+            return (new InvoicesController())->createManualFromProject($request, $userContext);
+        });
+
+        $router->post('/invoices/delete-manual-draft', function (Request $request, UserContext $userContext): Response {
+            return (new InvoicesController())->deleteManualDraft($request, $userContext);
+        });
+
         $router->get('/invoices/new', function (Request $request, UserContext $userContext): Response {
             return (new InvoicesController())->new($request, $userContext);
         });

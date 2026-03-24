@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Modules\Quotes\Repositories;
 
 use Core\Database\Connection;
+use Modules\Invoices\Services\LineAmountCalculator;
 use PDO;
 
 final class QuoteRepository
@@ -220,6 +221,8 @@ final class QuoteRepository
         try {
             $lineTotal = $quantity * $unitPrice;
             $lineTotal = (float) round($lineTotal, 2);
+            $vatRate = 20.0;
+            $amounts = LineAmountCalculator::fromQtyUnitVat($quantity, $unitPrice, $vatRate);
 
             if ($quoteNumber === null || $quoteNumber === '') {
                 $quoteNumber = 'DV-' . date('YmdHis') . '-' . random_int(100, 999);
@@ -245,7 +248,11 @@ final class QuoteRepository
                     quantity,
                     unitPrice,
                     lineTotal,
-                    estimatedTimeMinutes
+                    estimatedTimeMinutes,
+                    vatRate,
+                    revenueAccount,
+                    lineVat,
+                    lineTtc
                 ) VALUES (
                     :companyId,
                     :quoteId,
@@ -254,7 +261,11 @@ final class QuoteRepository
                     :quantity,
                     :unitPrice,
                     :lineTotal,
-                    :estimatedTimeMinutes
+                    :estimatedTimeMinutes,
+                    :vatRate,
+                    NULL,
+                    :lineVat,
+                    :lineTtc
                 )
             ');
 
@@ -266,6 +277,9 @@ final class QuoteRepository
                 'unitPrice' => $unitPrice,
                 'lineTotal' => $lineTotal,
                 'estimatedTimeMinutes' => $estimatedTimeMinutes,
+                'vatRate' => $vatRate,
+                'lineVat' => $amounts['lineVat'],
+                'lineTtc' => $amounts['lineTtc'],
             ]);
 
             $pdo->commit();
@@ -282,7 +296,9 @@ final class QuoteRepository
      *   description:string,
      *   quantity:float,
      *   unitPrice:float,
-     *   estimatedTimeMinutes:?int
+     *   estimatedTimeMinutes:?int,
+     *   vatRate?:float,
+     *   revenueAccount?:?string
      * }> $items
      */
     public function createQuoteWithItems(
@@ -323,7 +339,11 @@ final class QuoteRepository
                     quantity,
                     unitPrice,
                     lineTotal,
-                    estimatedTimeMinutes
+                    estimatedTimeMinutes,
+                    vatRate,
+                    revenueAccount,
+                    lineVat,
+                    lineTtc
                 ) VALUES (
                     :companyId,
                     :quoteId,
@@ -332,7 +352,11 @@ final class QuoteRepository
                     :quantity,
                     :unitPrice,
                     :lineTotal,
-                    :estimatedTimeMinutes
+                    :estimatedTimeMinutes,
+                    :vatRate,
+                    :revenueAccount,
+                    :lineVat,
+                    :lineTtc
                 )
             ');
 
@@ -340,6 +364,14 @@ final class QuoteRepository
                 $quantity = (float) $item['quantity'];
                 $unitPrice = (float) $item['unitPrice'];
                 $lineTotal = (float) round($quantity * $unitPrice, 2);
+                $vatRate = isset($item['vatRate']) && is_numeric($item['vatRate'])
+                    ? (float) $item['vatRate']
+                    : 20.0;
+                $vatRate = max(0.0, min(100.0, $vatRate));
+                $revenueAccount = isset($item['revenueAccount']) && $item['revenueAccount'] !== null && trim((string) $item['revenueAccount']) !== ''
+                    ? trim((string) $item['revenueAccount'])
+                    : null;
+                $amounts = LineAmountCalculator::fromQtyUnitVat($quantity, $unitPrice, $vatRate);
 
                 $stmtItem->execute([
                     'companyId' => $companyId,
@@ -350,6 +382,10 @@ final class QuoteRepository
                     'unitPrice' => $unitPrice,
                     'lineTotal' => $lineTotal,
                     'estimatedTimeMinutes' => $item['estimatedTimeMinutes'] ?? null,
+                    'vatRate' => $vatRate,
+                    'revenueAccount' => $revenueAccount,
+                    'lineVat' => $amounts['lineVat'],
+                    'lineTtc' => $amounts['lineTtc'],
                 ]);
             }
 
@@ -388,7 +424,11 @@ final class QuoteRepository
      *   lineTotal:float,
      *   estimatedTimeMinutes:?int,
      *   priceLibraryItemId:?int,
-     *   unitLabel:?string
+     *   unitLabel:?string,
+     *   vatRate:float,
+     *   revenueAccount:?string,
+     *   lineVat:float,
+     *   lineTtc:float
      * }>
      */
     public function listItemsByCompanyIdAndQuoteId(int $companyId, int $quoteId): array
@@ -403,6 +443,10 @@ final class QuoteRepository
                 qi.lineTotal,
                 qi.estimatedTimeMinutes,
                 qi.priceLibraryItemId,
+                qi.vatRate,
+                qi.revenueAccount,
+                qi.lineVat,
+                qi.lineTtc,
                 pl.unitLabel AS unitLabel
             FROM QuoteItem qi
             LEFT JOIN PriceLibraryItem pl

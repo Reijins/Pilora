@@ -159,6 +159,7 @@ CREATE TABLE IF NOT EXISTS Client (
   chantierRef VARCHAR(255) NULL,
   address VARCHAR(255) NULL,
   siret VARCHAR(32) NULL,
+  accountingCustomerAccount VARCHAR(32) NULL,
   notes TEXT NULL,
   createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -233,6 +234,10 @@ CREATE TABLE IF NOT EXISTS QuoteItem (
   quantity DECIMAL(10,2) NOT NULL DEFAULT 1,
   unitPrice DECIMAL(15,2) NOT NULL DEFAULT 0,
   lineTotal DECIMAL(15,2) NOT NULL DEFAULT 0,
+  vatRate DECIMAL(5,2) NOT NULL DEFAULT 20.00,
+  revenueAccount VARCHAR(32) NULL,
+  lineVat DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  lineTtc DECIMAL(15,2) NOT NULL DEFAULT 0.00,
   estimatedTimeMinutes INT NULL,
   createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -257,6 +262,7 @@ CREATE TABLE IF NOT EXISTS Invoice (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   companyId BIGINT UNSIGNED NOT NULL,
   quoteId BIGINT UNSIGNED NULL,
+  projectId BIGINT UNSIGNED NULL,
   clientId BIGINT UNSIGNED NOT NULL,
   invoiceNumber VARCHAR(50) NULL,
   title VARCHAR(255) NULL,
@@ -268,6 +274,7 @@ CREATE TABLE IF NOT EXISTS Invoice (
   sentAt DATETIME NULL,
   paidAt DATETIME NULL,
   notes TEXT NULL,
+  accountingExportedAt DATETIME NULL,
   paymentToken VARCHAR(64) NULL,
   stripeCheckoutSessionId VARCHAR(255) NULL,
   createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -277,6 +284,7 @@ CREATE TABLE IF NOT EXISTS Invoice (
   UNIQUE KEY uq_invoice_paymentToken (paymentToken),
   KEY idx_invoice_clientId (companyId, clientId),
   KEY idx_invoice_quoteId (companyId, quoteId),
+  KEY idx_invoice_projectId (companyId, projectId),
   KEY idx_invoice_status (companyId, status),
   CONSTRAINT fk_invoice_company
     FOREIGN KEY (companyId) REFERENCES Company (id)
@@ -287,6 +295,33 @@ CREATE TABLE IF NOT EXISTS Invoice (
   CONSTRAINT fk_invoice_quote
     FOREIGN KEY (quoteId) REFERENCES Quote (id)
     ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS InvoiceItem (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  companyId BIGINT UNSIGNED NOT NULL,
+  invoiceId BIGINT UNSIGNED NOT NULL,
+  priceLibraryItemId BIGINT UNSIGNED NULL,
+  description VARCHAR(255) NOT NULL,
+  quantity DECIMAL(10,2) NOT NULL DEFAULT 1,
+  unitPrice DECIMAL(15,2) NOT NULL DEFAULT 0,
+  lineTotal DECIMAL(15,2) NOT NULL DEFAULT 0,
+  vatRate DECIMAL(5,2) NOT NULL DEFAULT 20.00,
+  revenueAccount VARCHAR(32) NULL,
+  lineVat DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  lineTtc DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  lineSort INT NOT NULL DEFAULT 0,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_invoiceItem_company (companyId),
+  KEY idx_invoiceItem_invoice (companyId, invoiceId),
+  CONSTRAINT fk_invoiceItem_company
+    FOREIGN KEY (companyId) REFERENCES Company (id)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT fk_invoiceItem_invoice
+    FOREIGN KEY (invoiceId) REFERENCES Invoice (id)
+    ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ================= PAYMENTS =================
@@ -344,6 +379,11 @@ CREATE TABLE IF NOT EXISTS Project (
     FOREIGN KEY (clientId) REFERENCES Client (id)
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE Invoice
+  ADD CONSTRAINT fk_invoice_project
+  FOREIGN KEY (projectId) REFERENCES Project (id)
+  ON DELETE SET NULL ON UPDATE CASCADE;
 
 CREATE TABLE IF NOT EXISTS ProjectAssignment (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -520,6 +560,8 @@ CREATE TABLE IF NOT EXISTS PriceLibraryItem (
   description TEXT NULL,
   unitLabel VARCHAR(50) NULL,
   unitPrice DECIMAL(15,2) NOT NULL DEFAULT 0,
+  defaultVatRate DECIMAL(5,2) NULL,
+  defaultRevenueAccount VARCHAR(32) NULL,
   estimatedTimeMinutes INT NULL,
   status ENUM('active','inactive') NOT NULL DEFAULT 'active',
   createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

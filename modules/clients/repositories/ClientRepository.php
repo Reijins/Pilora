@@ -16,7 +16,7 @@ final class ClientRepository
         $pdo = Connection::pdo();
 
         $sql = '
-            SELECT id, name, phone, email
+            SELECT id, name, phone, email, accountingCustomerAccount
             FROM Client
             WHERE companyId = :companyId
         ';
@@ -52,7 +52,7 @@ final class ClientRepository
     {
         $pdo = Connection::pdo();
         $stmt = $pdo->prepare('
-            SELECT id, name, phone, email, address, notes, siret
+            SELECT id, name, phone, email, address, notes, siret, accountingCustomerAccount
             FROM Client
             WHERE companyId = :companyId AND id = :id
             LIMIT 1
@@ -81,13 +81,14 @@ final class ClientRepository
         ?string $email,
         ?string $address,
         ?string $notes,
-        ?string $siret = null
+        ?string $siret = null,
+        ?string $accountingCustomerAccount = null,
     ): int {
         $pdo = Connection::pdo();
 
         $stmt = $pdo->prepare('
-            INSERT INTO Client (companyId, name, phone, email, address, notes, siret, createdAt, updatedAt)
-            VALUES (:companyId, :name, :phone, :email, :address, :notes, :siret, NOW(), NOW())
+            INSERT INTO Client (companyId, name, phone, email, address, notes, siret, accountingCustomerAccount, createdAt, updatedAt)
+            VALUES (:companyId, :name, :phone, :email, :address, :notes, :siret, :accountingCustomerAccount, NOW(), NOW())
         ');
 
         $stmt->execute([
@@ -98,6 +99,7 @@ final class ClientRepository
             'address' => $address,
             'notes' => $notes,
             'siret' => $siret !== null && $siret !== '' ? $siret : null,
+            'accountingCustomerAccount' => $accountingCustomerAccount !== null && trim($accountingCustomerAccount) !== '' ? trim($accountingCustomerAccount) : null,
         ]);
 
         return (int) $pdo->lastInsertId();
@@ -111,7 +113,8 @@ final class ClientRepository
         ?string $email,
         ?string $address,
         ?string $notes,
-        ?string $siret = null
+        ?string $siret = null,
+        ?string $accountingCustomerAccount = null,
     ): bool {
         $pdo = Connection::pdo();
         $stmt = $pdo->prepare('
@@ -122,6 +125,7 @@ final class ClientRepository
                 address = :address,
                 notes = :notes,
                 siret = :siret,
+                accountingCustomerAccount = :accountingCustomerAccount,
                 updatedAt = NOW()
             WHERE companyId = :companyId
               AND id = :clientId
@@ -133,6 +137,7 @@ final class ClientRepository
             'address' => $address,
             'notes' => $notes,
             'siret' => $siret !== null && $siret !== '' ? $siret : null,
+            'accountingCustomerAccount' => $accountingCustomerAccount !== null && trim($accountingCustomerAccount) !== '' ? trim($accountingCustomerAccount) : null,
             'companyId' => $companyId,
             'clientId' => $clientId,
         ]);

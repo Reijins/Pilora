@@ -15,6 +15,13 @@ if ($estMin !== null) {
     }
 }
 $st = (string) ($item['status'] ?? 'active');
+$defVatDisp = '';
+if (isset($item['defaultVatRate']) && is_numeric($item['defaultVatRate'])) {
+    $defVatDisp = rtrim(rtrim(number_format((float) $item['defaultVatRate'], 2, '.', ''), '0'), '.');
+    if ($defVatDisp === '') {
+        $defVatDisp = '0';
+    }
+}
 $returnSub = $st === 'inactive' ? 'inactive' : 'active';
 $backHref = $basePath . '/price-library?sub=' . rawurlencode($returnSub);
 ?>
@@ -57,6 +64,12 @@ $backHref = $basePath . '/price-library?sub=' . rawurlencode($returnSub);
 
                 <label class="label" for="unit_price">Prix unitaire (€)</label>
                 <input class="input" id="unit_price" name="unit_price" type="number" step="0.01" min="0" value="<?= htmlspecialchars((string) ($item['unitPrice'] ?? '0'), ENT_QUOTES, 'UTF-8') ?>" required>
+
+                <label class="label" for="default_vat_rate">TVA par défaut (%)</label>
+                <input class="input" id="default_vat_rate" name="default_vat_rate" type="number" step="0.01" min="0" max="100" placeholder="Vide = aucune suggestion" value="<?= htmlspecialchars($defVatDisp, ENT_QUOTES, 'UTF-8') ?>">
+
+                <label class="label" for="default_revenue_account">Compte de vente (numéro)</label>
+                <input class="input" id="default_revenue_account" name="default_revenue_account" type="text" maxlength="32" value="<?= htmlspecialchars(trim((string) ($item['defaultRevenueAccount'] ?? '')), ENT_QUOTES, 'UTF-8') ?>">
 
                 <label class="label" for="estimated_time_hours">Temps estimé (heures)</label>
                 <input class="input" id="estimated_time_hours" name="estimated_time_hours" type="number" min="0" step="0.01" placeholder="Ex. 1,5" value="<?= htmlspecialchars($hoursDisplay, ENT_QUOTES, 'UTF-8') ?>">

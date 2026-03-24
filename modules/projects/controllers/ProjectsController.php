@@ -20,6 +20,7 @@ use Modules\Settings\Repositories\SmtpSettingsRepository;
 use Modules\Projects\Repositories\ProjectPhotoRepository;
 use Modules\Projects\Repositories\ProjectRepository;
 use Modules\Projects\Repositories\ProjectReportRepository;
+use Modules\Invoices\Services\DocumentTotalsService;
 use Modules\Invoices\Services\InvoiceAmountsService;
 use Modules\Quotes\Repositories\QuoteRepository;
 use Modules\Quotes\Repositories\QuoteSignatureRepository;
@@ -27,6 +28,28 @@ use Modules\Quotes\Repositories\QuoteShareRepository;
 use Modules\Quotes\Services\QuoteDeliveryService;
 final class ProjectsController extends BaseController
 {
+    /**
+     * @param array<string, mixed>|null $pi Ligne bibliothèque sélectionnée (ou null).
+     * @return array{vatRate:float, revenueAccount:?string}
+     */
+    private static function resolveLineVatAndAccount(?array $pi, mixed $postedVatRaw, mixed $postedAccRaw, float $companyDefaultVat): array
+    {
+        $vat = $companyDefaultVat;
+        if (is_numeric($postedVatRaw)) {
+            $vat = (float) $postedVatRaw;
+        } elseif (is_array($pi) && isset($pi['defaultVatRate']) && is_numeric($pi['defaultVatRate'])) {
+            $vat = (float) $pi['defaultVatRate'];
+        }
+        $vat = max(0.0, min(100.0, $vat));
+
+        $acc = trim((string) $postedAccRaw);
+        if ($acc === '' && is_array($pi) && isset($pi['defaultRevenueAccount'])) {
+            $acc = trim((string) $pi['defaultRevenueAccount']);
+        }
+
+        return ['vatRate' => $vat, 'revenueAccount' => $acc !== '' ? $acc : null];
+    }
+
     /** Saisie heures (formulaire affaire) → minutes stockées. */
     private static function estimatedMinutesFromHoursInput(mixed $raw): ?int
     {
@@ -231,6 +254,8 @@ final class ProjectsController extends BaseController
         $canCreateQuote = in_array('quote.create', $userContext->permissions, true);
         if ($canCreateQuote) {
             $title = $quoteTitle !== '' ? $quoteTitle : ('Devis - ' . $name);
+            $smtpQuote = (new SmtpSettingsRepository())->getByCompanyId($userContext->companyId);
+            $companyDefaultVat = is_numeric($smtpQuote['vat_rate'] ?? null) ? (float) $smtpQuote['vat_rate'] : 20.0;
 
             $priceItems = [];
             try {
@@ -260,6 +285,8 @@ final class ProjectsController extends BaseController
             $unitPricesRaw = $request->getBodyParam('item_unit_price', []);
             $estimatedTimesRaw = $request->getBodyParam('item_estimated_time_hours', []);
             $saveToLibraryRaw = $request->getBodyParam('item_save_to_library', []);
+            $itemVatsRaw = $request->getBodyParam('item_vat_rate', []);
+            $itemAccsRaw = $request->getBodyParam('item_revenue_account', []);
 
             $itemNames = is_array($itemNamesRaw) ? $itemNamesRaw : [];
             $priceItemIds = is_array($priceItemIdsRaw) ? $priceItemIdsRaw : [];
@@ -267,6 +294,8 @@ final class ProjectsController extends BaseController
             $unitPrices = is_array($unitPricesRaw) ? $unitPricesRaw : [];
             $estimatedTimes = is_array($estimatedTimesRaw) ? $estimatedTimesRaw : [];
             $saveToLibrary = is_array($saveToLibraryRaw) ? $saveToLibraryRaw : [];
+            $itemVats = is_array($itemVatsRaw) ? $itemVatsRaw : [];
+            $itemAccs = is_array($itemAccsRaw) ? $itemAccsRaw : [];
 
             $count = max(
                 count($itemNames),
@@ -274,7 +303,9 @@ final class ProjectsController extends BaseController
                 count($quantities),
                 count($unitPrices),
                 count($estimatedTimes),
-                count($saveToLibrary)
+                count($saveToLibrary),
+                count($itemVats),
+                count($itemAccs)
             );
 
             $items = [];
@@ -320,12 +351,24 @@ final class ProjectsController extends BaseController
                     continue;
                 }
 
+                $libRow = ($priceItemId !== null && isset($priceItemMap[$priceItemId]))
+                    ? $priceItemMap[$priceItemId]
+                    : null;
+                $comm = self::resolveLineVatAndAccount(
+                    is_array($libRow) ? $libRow : null,
+                    $itemVats[$i] ?? null,
+                    $itemAccs[$i] ?? null,
+                    $companyDefaultVat,
+                );
+
                 $items[] = [
                     'priceLibraryItemId' => $priceItemId,
                     'description' => $description !== '' ? $description : ($nameItem !== '' ? $nameItem : 'Prestation'),
                     'quantity' => $quantity,
                     'unitPrice' => $unitPrice,
                     'estimatedTimeMinutes' => $estimatedTime,
+                    'vatRate' => $comm['vatRate'],
+                    'revenueAccount' => $comm['revenueAccount'],
                 ];
 
                 $shouldSave = isset($saveToLibrary[(string) $i]) || isset($saveToLibrary[$i]);
@@ -335,6 +378,8 @@ final class ProjectsController extends BaseController
                         'description' => $description !== '' ? $description : $nameItem,
                         'unitPrice' => $unitPrice,
                         'estimatedTimeMinutes' => $estimatedTime,
+                        'defaultVatRate' => $comm['vatRate'],
+                        'defaultRevenueAccount' => $comm['revenueAccount'],
                     ];
                 }
             }
@@ -347,6 +392,8 @@ final class ProjectsController extends BaseController
                     'quantity' => 1.0,
                     'unitPrice' => 1.0,
                     'estimatedTimeMinutes' => null,
+                    'vatRate' => $companyDefaultVat,
+                    'revenueAccount' => null,
                 ];
             }
 
@@ -364,6 +411,7 @@ final class ProjectsController extends BaseController
                 if ($canCreatePriceLibrary && $manualItemsToSave !== []) {
                     $priceRepo = new PriceLibraryRepository();
                     foreach ($manualItemsToSave as $mi) {
+                        $dv = $mi['defaultVatRate'] ?? null;
                         $priceRepo->create(
                             companyId: $userContext->companyId,
                             code: null,
@@ -371,6 +419,10 @@ final class ProjectsController extends BaseController
                             description: (string) $mi['description'],
                             unitLabel: null,
                             unitPrice: (float) $mi['unitPrice'],
+                            defaultVatRate: is_numeric($dv) ? (float) $dv : null,
+                            defaultRevenueAccount: isset($mi['defaultRevenueAccount']) && $mi['defaultRevenueAccount'] !== null
+                                ? (string) $mi['defaultRevenueAccount']
+                                : null,
                             estimatedTimeMinutes: isset($mi['estimatedTimeMinutes']) && is_numeric($mi['estimatedTimeMinutes']) ? (int) $mi['estimatedTimeMinutes'] : null,
                             status: 'active',
                         );
@@ -518,6 +570,41 @@ final class ProjectsController extends BaseController
         } catch (\Throwable) {
             $invoices = [];
         }
+
+        $sortedInvoicesForNav = array_values($invoices);
+        usort($sortedInvoicesForNav, static function (array $a, array $b): int {
+            return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
+        });
+        $activeInvoiceIdRaw = $request->getQueryParam('invoiceId', null);
+        $activeInvoiceIdParam = is_numeric($activeInvoiceIdRaw) ? (int) $activeInvoiceIdRaw : 0;
+        $activeInvoice = null;
+        $invoiceNavIndex = 0;
+        $invoiceNavTotal = count($sortedInvoicesForNav);
+        $invoiceNavPrevId = 0;
+        $invoiceNavNextId = 0;
+        if ($invoiceNavTotal > 0) {
+            $foundIdx = -1;
+            if ($activeInvoiceIdParam > 0) {
+                foreach ($sortedInvoicesForNav as $idx => $invRow) {
+                    if ((int) ($invRow['id'] ?? 0) === $activeInvoiceIdParam) {
+                        $foundIdx = $idx;
+                        break;
+                    }
+                }
+            }
+            if ($foundIdx < 0) {
+                $foundIdx = $invoiceNavTotal - 1;
+            }
+            $invoiceNavIndex = $foundIdx;
+            $activeInvoice = $sortedInvoicesForNav[$foundIdx];
+            if ($foundIdx > 0) {
+                $invoiceNavPrevId = (int) ($sortedInvoicesForNav[$foundIdx - 1]['id'] ?? 0);
+            }
+            if ($foundIdx < $invoiceNavTotal - 1) {
+                $invoiceNavNextId = (int) ($sortedInvoicesForNav[$foundIdx + 1]['id'] ?? 0);
+            }
+        }
+
         try {
             $reports = (new ProjectReportRepository())->listByCompanyIdAndProjectId($userContext->companyId, $projectId, 8);
         } catch (\Throwable) {
@@ -631,7 +718,9 @@ final class ProjectsController extends BaseController
         $canPhotoRead = in_array('project.photo.read', $userContext->permissions, true);
         $canPhotoUpload = in_array('project.photo.upload', $userContext->permissions, true);
         $canInvoiceSend = in_array('invoice.read', $userContext->permissions, true);
+        $canInvoiceCreate = in_array('invoice.create', $userContext->permissions, true);
         $canInvoiceMarkPaid = in_array('invoice.mark_paid', $userContext->permissions, true);
+        $canInvoiceUpdate = in_array('invoice.update', $userContext->permissions, true);
 
         try {
             $defaultInvoiceDueDate = (new \DateTimeImmutable('now'))->modify('+30 days')->format('Y-m-d');
@@ -658,6 +747,11 @@ final class ProjectsController extends BaseController
                 static fn (array $inv): bool => (string) ($inv['status'] ?? '') !== 'annulee'
             )),
             'invoices' => $invoices,
+            'activeInvoice' => $activeInvoice,
+            'invoiceNavIndex' => $invoiceNavIndex,
+            'invoiceNavTotal' => $invoiceNavTotal,
+            'invoiceNavPrevId' => $invoiceNavPrevId,
+            'invoiceNavNextId' => $invoiceNavNextId,
             'reports' => $reports,
             'photos' => $photos,
             'csrfToken' => Csrf::token(),
@@ -669,7 +763,9 @@ final class ProjectsController extends BaseController
             'canPhotoRead' => $canPhotoRead,
             'canPhotoUpload' => $canPhotoUpload,
             'canInvoiceSend' => $canInvoiceSend,
+            'canInvoiceCreate' => $canInvoiceCreate,
             'canInvoiceMarkPaid' => $canInvoiceMarkPaid,
+            'canInvoiceUpdate' => $canInvoiceUpdate,
             'flashMessage' => $request->getQueryParam('msg', null),
             'flashError' => $request->getQueryParam('err', null),
             'vatRate' => $vatRate,
@@ -717,12 +813,17 @@ final class ProjectsController extends BaseController
             $title = (string) ($sourceQuote['title'] ?? ('Devis - Affaire #' . $projectId));
         }
 
+        $smtpVer = (new SmtpSettingsRepository())->getByCompanyId($userContext->companyId);
+        $companyDefaultVat = is_numeric($smtpVer['vat_rate'] ?? null) ? (float) $smtpVer['vat_rate'] : 20.0;
+
         $itemNamesRaw = $request->getBodyParam('item_name', []);
         $priceItemIdsRaw = $request->getBodyParam('item_price_item_id', []);
         $quantitiesRaw = $request->getBodyParam('item_quantity', []);
         $unitPricesRaw = $request->getBodyParam('item_unit_price', []);
         $timesRaw = $request->getBodyParam('item_estimated_time_hours', []);
         $saveToLibraryRaw = $request->getBodyParam('item_save_to_library', []);
+        $itemVatsRaw = $request->getBodyParam('item_vat_rate', []);
+        $itemAccsRaw = $request->getBodyParam('item_revenue_account', []);
 
         $itemNames = is_array($itemNamesRaw) ? $itemNamesRaw : [];
         $priceItemIds = is_array($priceItemIdsRaw) ? $priceItemIdsRaw : [];
@@ -730,6 +831,8 @@ final class ProjectsController extends BaseController
         $unitPrices = is_array($unitPricesRaw) ? $unitPricesRaw : [];
         $times = is_array($timesRaw) ? $timesRaw : [];
         $saveToLibrary = is_array($saveToLibraryRaw) ? $saveToLibraryRaw : [];
+        $itemVats = is_array($itemVatsRaw) ? $itemVatsRaw : [];
+        $itemAccs = is_array($itemAccsRaw) ? $itemAccsRaw : [];
 
         $priceItems = [];
         try {
@@ -753,7 +856,16 @@ final class ProjectsController extends BaseController
             }
         }
 
-        $count = max(count($itemNames), count($priceItemIds), count($quantities), count($unitPrices), count($times), count($saveToLibrary));
+        $count = max(
+            count($itemNames),
+            count($priceItemIds),
+            count($quantities),
+            count($unitPrices),
+            count($times),
+            count($saveToLibrary),
+            count($itemVats),
+            count($itemAccs)
+        );
         $items = [];
         $manualItemsToSave = [];
         $canCreatePriceLibrary = in_array('price.library.create', $userContext->permissions, true);
@@ -790,12 +902,25 @@ final class ProjectsController extends BaseController
             if (($nameItem === '' && $priceItemId === null) || $quantity <= 0 || $unitPrice <= 0) {
                 continue;
             }
+
+            $libRow = ($priceItemId !== null && isset($priceItemMap[$priceItemId]))
+                ? $priceItemMap[$priceItemId]
+                : null;
+            $comm = self::resolveLineVatAndAccount(
+                is_array($libRow) ? $libRow : null,
+                $itemVats[$i] ?? null,
+                $itemAccs[$i] ?? null,
+                $companyDefaultVat,
+            );
+
             $items[] = [
                 'priceLibraryItemId' => $priceItemId,
                 'description' => $description !== '' ? $description : ($nameItem !== '' ? $nameItem : 'Prestation'),
                 'quantity' => $quantity,
                 'unitPrice' => $unitPrice,
                 'estimatedTimeMinutes' => $estimated,
+                'vatRate' => $comm['vatRate'],
+                'revenueAccount' => $comm['revenueAccount'],
             ];
 
             $shouldSave = isset($saveToLibrary[(string) $i]) || isset($saveToLibrary[$i]);
@@ -805,6 +930,8 @@ final class ProjectsController extends BaseController
                     'description' => $description !== '' ? $description : $nameItem,
                     'unitPrice' => $unitPrice,
                     'estimatedTimeMinutes' => $estimated,
+                    'defaultVatRate' => $comm['vatRate'],
+                    'defaultRevenueAccount' => $comm['revenueAccount'],
                 ];
             }
         }
@@ -827,6 +954,7 @@ final class ProjectsController extends BaseController
             if ($canCreatePriceLibrary && $manualItemsToSave !== []) {
                 $priceRepo = new PriceLibraryRepository();
                 foreach ($manualItemsToSave as $mi) {
+                    $dv = $mi['defaultVatRate'] ?? null;
                     $priceRepo->create(
                         companyId: $userContext->companyId,
                         code: null,
@@ -834,6 +962,10 @@ final class ProjectsController extends BaseController
                         description: (string) $mi['description'],
                         unitLabel: null,
                         unitPrice: (float) $mi['unitPrice'],
+                        defaultVatRate: is_numeric($dv) ? (float) $dv : null,
+                        defaultRevenueAccount: isset($mi['defaultRevenueAccount']) && $mi['defaultRevenueAccount'] !== null
+                            ? (string) $mi['defaultRevenueAccount']
+                            : null,
                         estimatedTimeMinutes: isset($mi['estimatedTimeMinutes']) && is_numeric($mi['estimatedTimeMinutes']) ? (int) $mi['estimatedTimeMinutes'] : null,
                         status: 'active',
                     );
@@ -1271,11 +1403,11 @@ final class ProjectsController extends BaseController
             if (preg_match('/\[CONTACT_ID:([0-9]+)\]/', $projectNotes, $m)) {
                 $contact = (new ContactRepository())->findByCompanyIdAndId($companyId, (int) $m[1]);
             }
-            $totalHt = 0.0;
-            foreach ($items as $it) {
-                $totalHt += (float) ($it['lineTotal'] ?? 0);
-            }
-            $totalHt = (float) round($totalHt, 2);
+            $totAgg = DocumentTotalsService::aggregate($items);
+            $totalHt = $totAgg['ht'];
+            $vatRate = $totAgg['vat_rate'];
+            $vatAmount = $totAgg['vat_amount'];
+            $totalTtc = $totAgg['ttc'];
 
             $token = (new QuoteShareRepository())->createOrRefresh(
                 companyId: $companyId,
@@ -1292,9 +1424,6 @@ final class ProjectsController extends BaseController
             $companyIdentity = (new CompanyRepository())->getDocumentIdentity($companyId, $smtp);
             $companyName = (string) $companyIdentity['name'];
 
-            $vatRate = is_numeric($smtp['vat_rate'] ?? null) ? (float) $smtp['vat_rate'] : 20.0;
-            $vatAmount = round($totalHt * ($vatRate / 100), 2);
-            $totalTtc = round($totalHt + $vatAmount, 2);
             $viewData = [
                 'project' => $project,
                 'quote' => $quote,
@@ -1310,6 +1439,7 @@ final class ProjectsController extends BaseController
                 'vatRate' => $vatRate,
                 'vatAmount' => $vatAmount,
                 'totalTtc' => $totalTtc,
+                'vatByRate' => $totAgg['vat_by_rate'],
                 'quoteLink' => $quoteLink,
             ];
             $viewsRoot = dirname(__DIR__, 3) . '/app/views';
@@ -1383,15 +1513,11 @@ final class ProjectsController extends BaseController
             'billing_email' => $companyIdentity['billing_email'],
         ];
 
-        $totalHt = 0.0;
-        foreach ($items as $it) {
-            $totalHt += (float) ($it['lineTotal'] ?? 0);
-        }
-        $totalHt = (float) round($totalHt, 2);
-        $smtp = (new SmtpSettingsRepository())->getByCompanyId($companyId);
-        $vatRate = is_numeric($smtp['vat_rate'] ?? null) ? (float) $smtp['vat_rate'] : 20.0;
-        $vatAmount = round($totalHt * ($vatRate / 100), 2);
-        $totalTtc = round($totalHt + $vatAmount, 2);
+        $totAgg = DocumentTotalsService::aggregate($items);
+        $totalHt = $totAgg['ht'];
+        $vatRate = $totAgg['vat_rate'];
+        $vatAmount = $totAgg['vat_amount'];
+        $totalTtc = $totAgg['ttc'];
 
         $viewsRoot = dirname(__DIR__, 3) . '/app/views';
         $html = View::render($viewsRoot . '/quotes/public_view.php', [
@@ -1405,6 +1531,7 @@ final class ProjectsController extends BaseController
             'totalHt' => $totalHt,
             'vatAmount' => $vatAmount,
             'totalTtc' => $totalTtc,
+            'vatByRate' => $totAgg['vat_by_rate'],
         ]);
         return new Response($html, 200, ['Content-Type' => 'text/html; charset=utf-8']);
     }
@@ -1541,14 +1668,11 @@ final class ProjectsController extends BaseController
             }
         }
         $smtp = (new SmtpSettingsRepository())->getByCompanyId($companyId);
-        $vatRate = is_numeric($smtp['vat_rate'] ?? null) ? (float) $smtp['vat_rate'] : 20.0;
-        $totalHt = 0.0;
-        foreach ($items as $it) {
-            $totalHt += (float) ($it['lineTotal'] ?? 0);
-        }
-        $totalHt = (float) round($totalHt, 2);
-        $vatAmount = round($totalHt * ($vatRate / 100), 2);
-        $totalTtc = round($totalHt + $vatAmount, 2);
+        $totAgg = DocumentTotalsService::aggregate($items);
+        $totalHt = $totAgg['ht'];
+        $vatRate = $totAgg['vat_rate'];
+        $vatAmount = $totAgg['vat_amount'];
+        $totalTtc = $totAgg['ttc'];
         $viewsRoot = dirname(__DIR__, 3) . '/app/views';
         $html = View::render($viewsRoot . '/quotes/pdf.php', [
             'quote' => $quote,
@@ -1560,6 +1684,7 @@ final class ProjectsController extends BaseController
             'totalHt' => $totalHt,
             'vatAmount' => $vatAmount,
             'totalTtc' => $totalTtc,
+            'vatByRate' => $totAgg['vat_by_rate'],
         ]);
         $pdf = (new QuoteDeliveryService())->buildPdf($html);
         return new Response($pdf, 200, [

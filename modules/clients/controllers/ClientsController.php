@@ -144,6 +144,7 @@ final class ClientsController extends BaseController
         $siret = trim((string) $request->getBodyParam('siret', ''));
         $firstName = trim((string) $request->getBodyParam('first_name', ''));
         $createContactWithClient = (string) $request->getBodyParam('create_contact_with_client', '0') === '1';
+        $accountingCustomerAccount = trim((string) $request->getBodyParam('accounting_customer_account', ''));
 
         if ($name === '') {
             return Response::redirect('clients?err=Nom%20obligatoire');
@@ -177,6 +178,7 @@ final class ClientsController extends BaseController
                 address: $address !== '' ? $address : null,
                 notes: $notes !== '' ? $notes : null,
                 siret: $clientType === 'entreprise' && $siret !== '' ? $siret : null,
+                accountingCustomerAccount: $accountingCustomerAccount !== '' ? $accountingCustomerAccount : null,
             );
             if ($clientType === 'particulier' && $createContactWithClient) {
                 (new ContactRepository())->create(
@@ -408,6 +410,7 @@ final class ClientsController extends BaseController
         $siret = trim((string) $request->getBodyParam('siret', ''));
         $firstName = trim((string) $request->getBodyParam('first_name', ''));
         $createContactWithClient = (string) $request->getBodyParam('create_contact_with_client', '0') === '1';
+        $accountingCustomerAccount = trim((string) $request->getBodyParam('accounting_customer_account', ''));
         if ($name === '') {
             return Response::redirect('clients/edit?clientId=' . $clientId . '&err=Nom%20obligatoire');
         }
@@ -437,6 +440,7 @@ final class ClientsController extends BaseController
                 address: $address !== '' ? $address : null,
                 notes: $notes !== '' ? $notes : null,
                 siret: $clientType === 'entreprise' && $siret !== '' ? $siret : null,
+                accountingCustomerAccount: $accountingCustomerAccount !== '' ? $accountingCustomerAccount : null,
             );
         } catch (\Throwable) {
             return Response::redirect('clients/edit?clientId=' . $clientId . '&err=Impossible%20de%20mettre%20a%20jour');
