@@ -70,6 +70,7 @@ final class UserAdminRepository
                 u.id,
                 u.email,
                 u.fullName,
+                u.coutHoraire,
                 u.status,
                 r.id AS roleId,
                 r.name AS roleName
@@ -99,6 +100,7 @@ final class UserAdminRepository
                     'id' => $userId,
                     'email' => $row['email'],
                     'fullName' => $row['fullName'] ?? null,
+                    'coutHoraire' => $row['coutHoraire'] ?? null,
                     'status' => $row['status'],
                     'roles' => [],
                 ];
@@ -236,7 +238,7 @@ final class UserAdminRepository
     {
         $pdo = Connection::pdo();
         $stmt = $pdo->prepare('
-            SELECT id, email, fullName, status, createdAt
+            SELECT id, email, fullName, coutHoraire, status, createdAt
             FROM `User`
             WHERE companyId = :companyId
             ORDER BY id DESC
@@ -277,7 +279,7 @@ final class UserAdminRepository
         }
         $pdo = Connection::pdo();
         $stmt = $pdo->prepare('
-            SELECT id, companyId, email, fullName, status, createdAt
+            SELECT id, companyId, email, fullName, coutHoraire, status, createdAt
             FROM `User`
             WHERE id = :id
             LIMIT 1
@@ -335,6 +337,27 @@ final class UserAdminRepository
             'email' => $email,
             'status' => $status,
         ]);
+        return $stmt->rowCount() > 0;
+    }
+
+    public function updateCoutHoraireForCompanyUser(int $companyId, int $userId, ?float $coutHoraire): bool
+    {
+        if ($userId <= 0) {
+            return false;
+        }
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            UPDATE `User`
+            SET coutHoraire = :cout,
+                updatedAt = NOW()
+            WHERE companyId = :companyId AND id = :id
+        ');
+        $stmt->execute([
+            'cout' => $coutHoraire !== null ? round(max(0.0, $coutHoraire), 2) : null,
+            'companyId' => $companyId,
+            'id' => $userId,
+        ]);
+
         return $stmt->rowCount() > 0;
     }
 }

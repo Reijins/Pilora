@@ -12,7 +12,7 @@ final class CompanyRepository
     {
         $pdo = Connection::pdo();
         $stmt = $pdo->prepare('
-            SELECT id, name, companyKind, billingEmail, status, billingPlan, billingStatus, billingCycle, maxSeats,
+            SELECT id, name, workHoursPerDay, companyKind, billingEmail, status, billingPlan, billingStatus, billingCycle, maxSeats,
                    subscriptionRenewsAt, externalBillingRef
             FROM Company
             WHERE id = :id
@@ -30,7 +30,7 @@ final class CompanyRepository
     {
         $pdo = Connection::pdo();
         $stmt = $pdo->prepare('
-            SELECT id, name, companyKind, billingEmail, status, billingPlan, billingStatus, billingCycle, maxSeats,
+            SELECT id, name, workHoursPerDay, companyKind, billingEmail, status, billingPlan, billingStatus, billingCycle, maxSeats,
                    subscriptionRenewsAt, externalBillingRef
             FROM Company
             ORDER BY id ASC
@@ -50,7 +50,7 @@ final class CompanyRepository
     {
         $pdo = Connection::pdo();
         $stmt = $pdo->prepare('
-            SELECT id, name, companyKind, billingEmail, status, billingPlan, billingStatus, billingCycle, maxSeats,
+            SELECT id, name, workHoursPerDay, companyKind, billingEmail, status, billingPlan, billingStatus, billingCycle, maxSeats,
                    subscriptionRenewsAt, externalBillingRef
             FROM Company
             WHERE companyKind = :tenant
@@ -193,7 +193,7 @@ final class CompanyRepository
     }
 
     /**
-     * @param array{name:?string, billingEmail:?string, status:?string} $data
+     * @param array{name:?string, billingEmail:?string, status:?string, workHoursPerDay:?float} $data
      */
     public function updateCore(int $companyId, array $data): void
     {
@@ -202,6 +202,11 @@ final class CompanyRepository
         if (isset($data['name']) && $data['name'] !== null && $data['name'] !== '') {
             $fields[] = 'name = :name';
             $params['name'] = $data['name'];
+        }
+        if (array_key_exists('workHoursPerDay', $data) && $data['workHoursPerDay'] !== null) {
+            $wh = max(0.01, min(24.0, (float) $data['workHoursPerDay']));
+            $fields[] = 'workHoursPerDay = :workHoursPerDay';
+            $params['workHoursPerDay'] = round($wh, 2);
         }
         if (array_key_exists('billingEmail', $data)) {
             $fields[] = 'billingEmail = :billingEmail';

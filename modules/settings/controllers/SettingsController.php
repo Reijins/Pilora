@@ -297,8 +297,13 @@ final class SettingsController extends BaseController
             if ($companyNameInput === '' || mb_strlen($companyNameInput) > 255) {
                 return Response::redirect('settings?tab=general&err=Nom%20de%20l%27entreprise%20invalide');
             }
+            $whRaw = str_replace(',', '.', trim((string) $request->getBodyParam('work_hours_per_day', '8')));
+            $whParsed = is_numeric($whRaw) ? (float) $whRaw : 8.0;
             try {
-                (new CompanyRepository())->updateCore($userContext->companyId, ['name' => $companyNameInput]);
+                (new CompanyRepository())->updateCore($userContext->companyId, [
+                    'name' => $companyNameInput,
+                    'workHoursPerDay' => $whParsed,
+                ]);
             } catch (\Throwable) {
                 return Response::redirect('settings?tab=general&err=Impossible%20de%20mettre%20a%20jour%20le%20nom');
             }
@@ -535,6 +540,38 @@ final class SettingsController extends BaseController
 
         Csrf::rotate();
         return Response::redirect('settings/users/new?msg=Utilisateur%20cr%C3%A9%C3%A9');
+    }
+
+    public function updateUserCoutHoraire(Request $request, UserContext $userContext): Response
+    {
+        if ($userContext->userId === null || $userContext->companyId === null) {
+            return Response::redirect('login');
+        }
+        if (!in_array(self::ADMIN_PERMISSION, $userContext->permissions, true)) {
+            return Response::redirect('settings');
+        }
+        $csrfToken = $request->getBodyParam('csrf_token', null);
+        if (!Csrf::verify(is_string($csrfToken) ? $csrfToken : null)) {
+            return Response::redirect('settings?tab=users&err=Requete%20invalide');
+        }
+        $userId = (int) $request->getBodyParam('user_id', 0);
+        $coutRaw = trim((string) $request->getBodyParam('cout_horaire', ''));
+        $cout = null;
+        if ($coutRaw !== '') {
+            $norm = str_replace(',', '.', $coutRaw);
+            if (!is_numeric($norm)) {
+                return Response::redirect('settings?tab=users&err=Cout%20horaire%20invalide');
+            }
+            $cout = round(max(0.0, (float) $norm), 2);
+        }
+        try {
+            (new UserAdminRepository())->updateCoutHoraireForCompanyUser($userContext->companyId, $userId, $cout);
+        } catch (\Throwable) {
+            return Response::redirect('settings?tab=users&err=Enregistrement%20impossible');
+        }
+        Csrf::rotate();
+
+        return Response::redirect('settings?tab=users&msg=Cout%20horaire%20enregistre');
     }
 
     public function updateRolePermissions(Request $request, UserContext $userContext): Response

@@ -16,6 +16,7 @@ $showTenantAppNav = !$isBackOffice || $isImpersonatingTenant;
             <a class="nav-link" href="<?= htmlspecialchars($basePath . '/planning', ENT_QUOTES, 'UTF-8') ?>">Planning</a>
             <a class="nav-link" href="<?= htmlspecialchars($basePath . '/clients', ENT_QUOTES, 'UTF-8') ?>">Clients</a>
             <a class="nav-link" href="<?= htmlspecialchars($basePath . '/projects', ENT_QUOTES, 'UTF-8') ?>">Affaires</a>
+            <a class="nav-link" href="<?= htmlspecialchars($basePath . '/projects/rentability', ENT_QUOTES, 'UTF-8') ?>">Rentabilité</a>
             <a class="nav-link" href="<?= htmlspecialchars($basePath . '/invoices', ENT_QUOTES, 'UTF-8') ?>">Factures</a>
             <a class="nav-link" href="<?= htmlspecialchars($basePath . '/price-library', ENT_QUOTES, 'UTF-8') ?>">Bibliothèque de prestations</a>
             <a class="nav-link" href="<?= htmlspecialchars($basePath . '/hr', ENT_QUOTES, 'UTF-8') ?>">RH</a>

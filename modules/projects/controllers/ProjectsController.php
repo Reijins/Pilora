@@ -20,6 +20,8 @@ use Modules\Settings\Repositories\SmtpSettingsRepository;
 use Modules\Projects\Repositories\ProjectPhotoRepository;
 use Modules\Projects\Repositories\ProjectRepository;
 use Modules\Projects\Repositories\ProjectReportRepository;
+use Modules\Projects\Repositories\ProjectTimeEntryRepository;
+use Modules\Projects\Services\ProjectRentabilityService;
 use Modules\Invoices\Services\DocumentTotalsService;
 use Modules\Invoices\Services\InvoiceAmountsService;
 use Modules\PriceLibrary\Services\PriceLineDefaultsResolver;
@@ -66,7 +68,7 @@ final class ProjectsController extends BaseController
                 'pageTitle' => 'Affaires',
                 'permissionDenied' => true,
                 'projects' => [],
-                'currentTab' => 'all',
+                'currentTab' => 'active',
                 'tabs' => [
                     'all' => 'Toutes',
                     'active' => 'En cours',
@@ -81,8 +83,8 @@ final class ProjectsController extends BaseController
             ]);
         }
 
-        $tabRaw = $request->getQueryParam('tab', 'all');
-        $tab = is_string($tabRaw) ? trim($tabRaw) : 'all';
+        $tabRaw = $request->getQueryParam('tab', 'active');
+        $tab = is_string($tabRaw) ? trim($tabRaw) : 'active';
 
         $tabs = [
             'all' => 'Toutes',
@@ -714,6 +716,28 @@ final class ProjectsController extends BaseController
             $defaultInvoiceDueDate = (new \DateTimeImmutable('now'))->modify('+30 days')->format('Y-m-d');
         }
 
+        $companyRow = [];
+        $workHoursPerDayUi = 8.0;
+        try {
+            $companyRow = (new CompanyRepository())->findById($userContext->companyId) ?: [];
+            if (is_numeric($companyRow['workHoursPerDay'] ?? null)) {
+                $workHoursPerDayUi = (float) $companyRow['workHoursPerDay'];
+            }
+        } catch (\Throwable) {
+            $companyRow = [];
+        }
+        $isTerminated = ProjectRentabilityService::isProjectTerminated($project);
+        $canUpdateProj = in_array('project.update', $userContext->permissions, true);
+        $rentStat = (string) ($project['rentabiliteStatut'] ?? 'a_renseigner');
+        $laborPreview = 0.0;
+        if ($isTerminated) {
+            try {
+                $laborPreview = (new ProjectRentabilityService())->laborCostAmount($userContext->companyId, $projectId);
+            } catch (\Throwable) {
+                $laborPreview = 0.0;
+            }
+        }
+
         return $this->renderPage('projects/show.php', [
             'pageTitle' => 'Fiche affaire',
             'permissionDenied' => false,
@@ -757,6 +781,12 @@ final class ProjectsController extends BaseController
             'vatRate' => $vatRate,
             'proofRequired' => $proofRequired,
             'defaultInvoiceDueDate' => $defaultInvoiceDueDate,
+            'isAffaireTerminee' => $isTerminated,
+            'workHoursPerDayUi' => $workHoursPerDayUi,
+            'canCompleteAffaire' => $canUpdateProj && !$isTerminated && !ProjectRentabilityService::isTerminalCancelledOrRefused((string) ($project['notes'] ?? '')),
+            'canEditRentabilite' => $canUpdateProj && $isTerminated,
+            'laborCostPreview' => $laborPreview,
+            'rentabiliteStatutCode' => $rentStat,
         ]);
     }
 
@@ -1361,6 +1391,294 @@ final class ProjectsController extends BaseController
         }
         Csrf::rotate();
         return Response::redirect('planning?projectId=' . $projectId . '&msg=Affaire%20planifiee');
+    }
+
+    /** @return array{0:string,1:string,2:string} [startYmd, endYmd, mode] */
+    private function resolveRentabilityPeriod(Request $request): array
+    {
+        $mode = trim((string) $request->getQueryParam('period', 'month'));
+        if (!in_array($mode, ['month', 'year', 'current'], true)) {
+            $mode = 'month';
+        }
+        try {
+            $now = new \DateTimeImmutable('today');
+        } catch (\Throwable) {
+            return [date('Y-m-01'), date('Y-m-t'), 'month'];
+        }
+        if ($mode === 'current') {
+            return [$now->format('Y-m-01'), $now->format('Y-m-t'), $mode];
+        }
+        if ($mode === 'year') {
+            $y = (int) $request->getQueryParam('year', (int) $now->format('Y'));
+            $y = max(2000, min(2100, $y));
+
+            return [sprintf('%04d-01-01', $y), sprintf('%04d-12-31', $y), $mode];
+        }
+        $ymRaw = trim((string) $request->getQueryParam('month', $now->format('Y-m')));
+        $d = \DateTimeImmutable::createFromFormat('!Y-m', $ymRaw) ?: $now;
+
+        return [$d->format('Y-m-01'), $d->format('Y-m-t'), $mode];
+    }
+
+    private static function parseMoneyAmount(mixed $raw): ?float
+    {
+        if ($raw === null) {
+            return null;
+        }
+        $s = str_replace(["\u{00A0}", ' '], '', trim((string) $raw));
+        $s = str_replace(',', '.', $s);
+        if ($s === '' || !is_numeric($s)) {
+            return null;
+        }
+
+        return round(max(0.0, (float) $s), 2);
+    }
+
+    public function rentabilityDashboard(Request $request, UserContext $userContext): Response
+    {
+        if ($userContext->userId === null || $userContext->companyId === null) {
+            return Response::redirect('login');
+        }
+        if (!in_array('project.read', $userContext->permissions, true)) {
+            return $this->renderPage('projects/rentability_index.php', [
+                'pageTitle' => 'Rentabilité des chantiers',
+                'permissionDenied' => true,
+            ]);
+        }
+
+        [$d1, $d2, $periodMode] = $this->resolveRentabilityPeriod($request);
+        $repo = new ProjectRepository();
+        $kpis = ['ca' => 0.0, 'benefice' => 0.0];
+        $pendingCount = 0;
+        $pending = [];
+        $history = [];
+        try {
+            $kpis = $repo->aggregateRentabilityKpi($userContext->companyId, $d1, $d2);
+            $pendingCount = $repo->countRentabilityToFill($userContext->companyId);
+            $sub = trim((string) $request->getQueryParam('sub', 'a_renseigner'));
+            $subTab = $sub === 'historique' ? 'historique' : 'a_renseigner';
+            if ($subTab === 'a_renseigner') {
+                $pending = $repo->listRentabilityToFill($userContext->companyId, 250);
+            } else {
+                $history = $repo->listRentabilityHistory($userContext->companyId, 250);
+            }
+        } catch (\Throwable) {
+            // garder valeurs vides
+        }
+
+        return $this->renderPage('projects/rentability_index.php', [
+            'pageTitle' => 'Rentabilité des chantiers',
+            'permissionDenied' => false,
+            'csrfToken' => Csrf::token(),
+            'kpiCa' => $kpis['ca'],
+            'kpiBenefice' => $kpis['benefice'],
+            'pendingCount' => $pendingCount,
+            'periodStart' => $d1,
+            'periodEnd' => $d2,
+            'periodMode' => $periodMode,
+            'subTab' => $subTab,
+            'pendingRows' => $pending,
+            'historyRows' => $history,
+            'canUpdateProject' => in_array('project.update', $userContext->permissions, true),
+            'flashMessage' => $request->getQueryParam('msg', null),
+            'flashError' => $request->getQueryParam('err', null),
+        ]);
+    }
+
+    public function rentabilityForm(Request $request, UserContext $userContext): Response
+    {
+        if ($userContext->userId === null || $userContext->companyId === null) {
+            return Response::redirect('login');
+        }
+        if (!in_array('project.read', $userContext->permissions, true)) {
+            return Response::redirect('clients?err=Acces%20refuse');
+        }
+        $projectId = (int) $request->getQueryParam('projectId', 0);
+        if ($projectId <= 0) {
+            return Response::redirect('projects/rentability?err=Affaire%20invalide');
+        }
+        $repo = new ProjectRepository();
+        $project = $repo->findByCompanyIdAndId($userContext->companyId, $projectId);
+        if (!is_array($project)) {
+            return Response::redirect('projects/rentability?err=Affaire%20introuvable');
+        }
+        if (!ProjectRentabilityService::isProjectTerminated($project)) {
+            return Response::redirect('projects/show?projectId=' . $projectId . '&err=Affaire%20non%20terminee');
+        }
+        $company = (new CompanyRepository())->findById($userContext->companyId) ?: [];
+        $workH = is_numeric($company['workHoursPerDay'] ?? null) ? (float) $company['workHoursPerDay'] : 8.0;
+        $timeRepo = new ProjectTimeEntryRepository();
+        $entries = [];
+        $users = [];
+        try {
+            $entries = $timeRepo->listByCompanyIdAndProjectId($userContext->companyId, $projectId);
+            $users = (new \Modules\Users\Repositories\UserAdminRepository())->listBasicByCompanyId($userContext->companyId);
+        } catch (\Throwable) {
+            $entries = [];
+            $users = [];
+        }
+        $rentService = new ProjectRentabilityService();
+        $labor = $rentService->laborCostAmount($userContext->companyId, $projectId);
+        $mat = is_numeric($project['coutMateriauxTotal'] ?? null) ? (float) $project['coutMateriauxTotal'] : 0.0;
+        $mont = isset($project['montantFactureHt']) && is_numeric($project['montantFactureHt']) ? (float) $project['montantFactureHt'] : null;
+        $preview = $rentService->computeTotals($mont, $mat, $labor);
+
+        return $this->renderPage('projects/rentability_form.php', [
+            'pageTitle' => 'Rentabilité — ' . (string) ($project['name'] ?? ''),
+            'permissionDenied' => false,
+            'csrfToken' => Csrf::token(),
+            'project' => $project,
+            'workHoursPerDay' => $workH,
+            'timeEntries' => $entries,
+            'companyUsers' => $users,
+            'laborCost' => $labor,
+            'previewBenefice' => $preview['beneficeTotal'],
+            'previewMarge' => $preview['margePercent'],
+            'canSave' => in_array('project.update', $userContext->permissions, true),
+            'flashMessage' => $request->getQueryParam('msg', null),
+            'flashError' => $request->getQueryParam('err', null),
+        ]);
+    }
+
+    public function rentabilitySave(Request $request, UserContext $userContext): Response
+    {
+        if ($userContext->userId === null || $userContext->companyId === null) {
+            return Response::redirect('login');
+        }
+        if (!in_array('project.update', $userContext->permissions, true)) {
+            return Response::redirect('projects/rentability?err=Permissions%20insuffisantes');
+        }
+        if (!Csrf::verify(is_string($request->getBodyParam('csrf_token', null)) ? (string) $request->getBodyParam('csrf_token', null) : null)) {
+            return Response::redirect('projects/rentability?err=Requete%20invalide');
+        }
+        $projectId = (int) $request->getBodyParam('project_id', 0);
+        if ($projectId <= 0) {
+            return Response::redirect('projects/rentability?err=Affaire%20invalide');
+        }
+        $repo = new ProjectRepository();
+        $project = $repo->findByCompanyIdAndId($userContext->companyId, $projectId);
+        if (!is_array($project) || !ProjectRentabilityService::isProjectTerminated($project)) {
+            return Response::redirect('projects/rentability?err=Affaire%20invalide');
+        }
+        $mont = self::parseMoneyAmount($request->getBodyParam('montant_facture_ht', null));
+        if ($mont === null) {
+            return Response::redirect('projects/rentability/form?projectId=' . $projectId . '&err=Montant%20facture%20HT%20requis');
+        }
+        $matRaw = self::parseMoneyAmount($request->getBodyParam('cout_materiaux_total', '0'));
+        $mat = $matRaw ?? 0.0;
+
+        $company = (new CompanyRepository())->findById($userContext->companyId) ?: [];
+        $workH = is_numeric($company['workHoursPerDay'] ?? null) ? (float) $company['workHoursPerDay'] : 8.0;
+
+        $uids = $request->getBodyParam('te_user_id', []);
+        $dates = $request->getBodyParam('te_date', []);
+        $daysArr = $request->getBodyParam('te_days', []);
+        $hoursArr = $request->getBodyParam('te_hours', []);
+        $minsArr = $request->getBodyParam('te_minutes', []);
+        if (!is_array($uids)) {
+            $uids = [];
+        }
+        if (!is_array($dates)) {
+            $dates = [];
+        }
+        if (!is_array($daysArr)) {
+            $daysArr = [];
+        }
+        if (!is_array($hoursArr)) {
+            $hoursArr = [];
+        }
+        if (!is_array($minsArr)) {
+            $minsArr = [];
+        }
+
+        $n = max(count($uids), count($dates), count($daysArr), count($hoursArr), count($minsArr));
+        $allowedUser = [];
+        try {
+            foreach ((new \Modules\Users\Repositories\UserAdminRepository())->listBasicByCompanyId($userContext->companyId) as $u) {
+                $allowedUser[(int) ($u['id'] ?? 0)] = true;
+            }
+        } catch (\Throwable) {
+            $allowedUser = [];
+        }
+
+        $rows = [];
+        for ($i = 0; $i < $n; $i++) {
+            $uid = isset($uids[$i]) && is_numeric($uids[$i]) ? (int) $uids[$i] : 0;
+            $d = isset($dates[$i]) ? trim((string) $dates[$i]) : '';
+            if ($uid <= 0 || !isset($allowedUser[$uid]) || $d === '') {
+                continue;
+            }
+            if (\DateTimeImmutable::createFromFormat('Y-m-d', $d) === false) {
+                return Response::redirect('projects/rentability/form?projectId=' . $projectId . '&err=Date%20invalide');
+            }
+            $min = ProjectRentabilityService::resolveDurationMinutes(
+                $daysArr[$i] ?? '',
+                $hoursArr[$i] ?? 0,
+                $minsArr[$i] ?? 0,
+                $workH,
+            );
+            if ($min <= 0) {
+                continue;
+            }
+            $rows[] = ['userId' => $uid, 'assignmentDate' => $d, 'durationMinutes' => $min];
+        }
+
+        $pdo = \Core\Database\Connection::pdo();
+        $timeRepo = new ProjectTimeEntryRepository();
+        $rentService = new ProjectRentabilityService();
+
+        try {
+            $pdo->beginTransaction();
+            $timeRepo->deleteByCompanyIdAndProjectId($userContext->companyId, $projectId);
+            $timeRepo->insertMany($userContext->companyId, $projectId, $rows);
+            $labor = $rentService->laborCostAmount($userContext->companyId, $projectId);
+            $tot = $rentService->computeTotals($mont, $mat, $labor);
+            $repo->saveRentabilityFigures($userContext->companyId, $projectId, [
+                'montantFactureHt' => $mont,
+                'coutMateriauxTotal' => $mat,
+                'beneficeTotal' => $tot['beneficeTotal'],
+                'margePercent' => $tot['margePercent'],
+            ]);
+            $pdo->commit();
+        } catch (\Throwable) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
+            return Response::redirect('projects/rentability/form?projectId=' . $projectId . '&err=Enregistrement%20impossible');
+        }
+
+        Csrf::rotate();
+
+        return Response::redirect('projects/rentability?sub=historique&msg=Rentabilite%20enregistree');
+    }
+
+    public function completeAffaire(Request $request, UserContext $userContext): Response
+    {
+        if ($userContext->userId === null || $userContext->companyId === null) {
+            return Response::redirect('login');
+        }
+        if (!in_array('project.update', $userContext->permissions, true)) {
+            return Response::redirect('projects/show?projectId=' . (int) $request->getBodyParam('project_id', 0) . '&err=Permissions');
+        }
+        if (!Csrf::verify(is_string($request->getBodyParam('csrf_token', null)) ? (string) $request->getBodyParam('csrf_token', null) : null)) {
+            $pidEarly = (int) $request->getBodyParam('project_id', 0);
+
+            return Response::redirect('projects/show?projectId=' . max(0, $pidEarly) . '&err=Requete%20invalide');
+        }
+        $projectId = (int) $request->getBodyParam('project_id', 0);
+        $dateFin = trim((string) $request->getBodyParam('actual_end_date', ''));
+        if ($projectId <= 0 || $dateFin === '' || \DateTimeImmutable::createFromFormat('Y-m-d', $dateFin) === false) {
+            return Response::redirect('projects/show?projectId=' . max(0, $projectId) . '&err=Date%20de%20fin%20invalide');
+        }
+        try {
+            (new ProjectRepository())->completeProject($userContext->companyId, $projectId, $dateFin);
+        } catch (\Throwable) {
+            return Response::redirect('projects/show?projectId=' . $projectId . '&err=Impossible%20de%20terminer');
+        }
+        Csrf::rotate();
+
+        return Response::redirect('projects/show?projectId=' . $projectId . '&msg=Affaire%20terminee');
     }
 
     private function sendQuoteEmailInternal(int $companyId, int $projectId, int $quoteId): bool

@@ -103,6 +103,27 @@ $invoiceIdQueryForQuoteNav = $preserveInvoiceIdForQuoteNav > 0 ? '&invoiceId=' .
                         <div class="kv-value"><?= htmlspecialchars(DateFormatter::frDate(isset($project['plannedEndDate']) ? (string) $project['plannedEndDate'] : null), ENT_QUOTES, 'UTF-8') ?></div>
                     </div>
                     <div class="kv">
+                        <div class="kv-label">Fin réelle</div>
+                        <div class="kv-value"><?= htmlspecialchars(DateFormatter::frDate(isset($project['actualEndDate']) ? (string) $project['actualEndDate'] : null), ENT_QUOTES, 'UTF-8') ?></div>
+                    </div>
+                    <div class="kv">
+                        <div class="kv-label">Rentabilité</div>
+                        <div class="kv-value">
+                            <?php
+                                $rs = (string) ($rentabiliteStatutCode ?? ($project['rentabiliteStatut'] ?? 'a_renseigner'));
+                                if ($rs === 'renseignee') {
+                                    echo 'Renseignée';
+                                    $rat = $project['rentabiliteRenseigneeAt'] ?? null;
+                                    if ($rat) {
+                                        echo ' <span class="muted">(' . htmlspecialchars(DateFormatter::frDateTime((string) $rat), ENT_QUOTES, 'UTF-8') . ')</span>';
+                                    }
+                                } else {
+                                    echo '<span class="chip chip-affaire chip-affaire--waiting">À renseigner</span>';
+                                }
+                            ?>
+                        </div>
+                    </div>
+                    <div class="kv">
                         <div class="kv-label">Nombre de devis</div>
                         <div class="kv-value"><?= (int) ($quotesCount ?? 0) ?></div>
                     </div>
@@ -126,6 +147,62 @@ $invoiceIdQueryForQuoteNav = $preserveInvoiceIdForQuoteNav > 0 ? '&invoiceId=' .
                         </div>
                     </div>
                 </div>
+
+                <?php
+                    $basePathShow = isset($basePath) && is_string($basePath) ? $basePath : '';
+                    $pidShow = (int) ($project['id'] ?? 0);
+                    $isDoneShow = !empty($isAffaireTerminee);
+                    $canComp = !empty($canCompleteAffaire);
+                    $canRent = !empty($canEditRentabilite);
+                    $rStat = (string) ($rentabiliteStatutCode ?? ($project['rentabiliteStatut'] ?? 'a_renseigner'));
+                ?>
+                <div class="card-inner-subtle" style="padding:12px 14px; border-radius:12px; border:1px solid var(--border); margin-bottom:14px; display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+                    <a class="btn btn-secondary" href="<?= htmlspecialchars($basePathShow . '/projects/rentability', ENT_QUOTES, 'UTF-8') ?>">Pilotage rentabilité</a>
+                    <?php if ($canComp): ?>
+                        <button type="button" class="btn btn-primary" data-open-modal="modal-termine-affaire">Terminer l’affaire</button>
+                    <?php endif; ?>
+                    <?php if ($isDoneShow && $canRent && $rStat === 'a_renseigner'): ?>
+                        <a class="btn btn-primary" href="<?= htmlspecialchars($basePathShow . '/projects/rentability/form?projectId=' . $pidShow, ENT_QUOTES, 'UTF-8') ?>">Saisir la rentabilité</a>
+                    <?php endif; ?>
+                    <?php if ($isDoneShow && $rStat === 'renseignee' && $canRent): ?>
+                        <a class="btn btn-secondary" href="<?= htmlspecialchars($basePathShow . '/projects/rentability/form?projectId=' . $pidShow, ENT_QUOTES, 'UTF-8') ?>">Modifier la rentabilité</a>
+                    <?php endif; ?>
+                    <?php if ($isDoneShow): ?>
+                        <span class="muted" style="font-size:0.9rem;">Main-d’œuvre : <strong><?= htmlspecialchars(number_format((float) ($laborCostPreview ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</strong></span>
+                    <?php endif; ?>
+                </div>
+
+                <div id="modal-termine-overlay" class="status-modal-overlay" style="display:none;">
+                    <div class="status-modal" role="dialog" aria-modal="true" aria-labelledby="modal-termine-title">
+                        <div class="status-modal-header">
+                            <h4 id="modal-termine-title" class="status-modal-title">Terminer l’affaire</h4>
+                            <button type="button" class="btn btn-secondary btn-icon" id="modal-termine-close" aria-label="Fermer"><span aria-hidden="true">&times;</span></button>
+                        </div>
+                        <form method="post" action="<?= htmlspecialchars($basePathShow . '/projects/complete', ENT_QUOTES, 'UTF-8') ?>" class="status-modal-form" id="modal-termine-form">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                            <input type="hidden" name="project_id" value="<?= $pidShow ?>">
+                            <label class="label" for="actual_end_date">Date de fin réelle</label>
+                            <input class="input" id="actual_end_date" name="actual_end_date" type="date" required value="<?= htmlspecialchars((new \DateTimeImmutable('today'))->format('Y-m-d'), ENT_QUOTES, 'UTF-8') ?>">
+                            <p class="muted" style="margin:8px 0 12px; font-size:0.88rem;">La date de fin de chantier — vous pouvez la mettre à une date passée si besoin.</p>
+                            <div class="status-reason-actions">
+                                <button class="btn btn-primary" type="submit">Valider</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <script>
+                (function () {
+                    var ov = document.getElementById('modal-termine-overlay');
+                    var closeBtn = document.getElementById('modal-termine-close');
+                    document.querySelectorAll('[data-open-modal="modal-termine-affaire"]').forEach(function (btn) {
+                        btn.addEventListener('click', function () {
+                            if (ov) ov.style.display = 'flex';
+                        });
+                    });
+                    if (closeBtn && ov) closeBtn.addEventListener('click', function () { ov.style.display = 'none'; });
+                    if (ov) ov.addEventListener('click', function (e) { if (e.target === ov) ov.style.display = 'none'; });
+                })();
+                </script>
 
                 <div class="sheet-stack">
                     <div class="section-card">

@@ -260,6 +260,22 @@ final class Bootstrap
             return (new ProjectsController())->planifyProject($request, $userContext);
         });
 
+        $router->get('/projects/rentability', function (Request $request, UserContext $userContext): Response {
+            return (new ProjectsController())->rentabilityDashboard($request, $userContext);
+        });
+
+        $router->get('/projects/rentability/form', function (Request $request, UserContext $userContext): Response {
+            return (new ProjectsController())->rentabilityForm($request, $userContext);
+        });
+
+        $router->post('/projects/rentability/save', function (Request $request, UserContext $userContext): Response {
+            return (new ProjectsController())->rentabilitySave($request, $userContext);
+        });
+
+        $router->post('/projects/complete', function (Request $request, UserContext $userContext): Response {
+            return (new ProjectsController())->completeAffaire($request, $userContext);
+        });
+
         $router->get('/quotes/view', function (Request $request, UserContext $userContext): Response {
             return (new ProjectsController())->publicQuoteView($request, $userContext);
         });
@@ -370,6 +386,10 @@ final class Bootstrap
 
         $router->post('/settings/users/create', function (Request $request, UserContext $userContext): Response {
             return (new SettingsController())->createUser($request, $userContext);
+        });
+
+        $router->post('/settings/users/cout-horaire', function (Request $request, UserContext $userContext): Response {
+            return (new SettingsController())->updateUserCoutHoraire($request, $userContext);
         });
 
         $router->post('/settings/roles/permissions', function (Request $request, UserContext $userContext): Response {

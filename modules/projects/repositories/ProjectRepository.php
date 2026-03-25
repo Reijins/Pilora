@@ -97,7 +97,7 @@ final class ProjectRepository
         } elseif ($tab === 'waiting') {
             $sql .= ' AND p.notes LIKE :waitingMarker';
         } elseif ($tab === 'done') {
-            $sql .= ' AND p.status = "completed"';
+            $sql .= ' AND (p.status = "completed" OR p.actualEndDate IS NOT NULL)';
         }
 
         $sql .= ' ORDER BY p.id DESC LIMIT :limit';
@@ -132,6 +132,12 @@ final class ProjectRepository
                 p.plannedEndDate,
                 p.actualStartDate,
                 p.actualEndDate,
+                p.montantFactureHt,
+                p.coutMateriauxTotal,
+                p.rentabiliteStatut,
+                p.rentabiliteRenseigneeAt,
+                p.beneficeTotal,
+                p.margePercent,
                 p.siteAddress,
                 p.siteCity,
                 p.sitePostalCode,
@@ -587,6 +593,193 @@ final class ProjectRepository
             'rangeEnd' => $rangeEndYmd,
         ]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function completeProject(int $companyId, int $projectId, string $actualEndDateYmd): bool
+    {
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            UPDATE Project
+            SET status = "completed",
+                actualEndDate = :actualEndDate,
+                updatedAt = NOW()
+            WHERE companyId = :companyId
+              AND id = :projectId
+              AND (notes IS NULL OR (notes NOT LIKE :cancelled AND notes NOT LIKE :refused))
+        ');
+        $stmt->execute([
+            'actualEndDate' => $actualEndDateYmd,
+            'companyId' => $companyId,
+            'projectId' => $projectId,
+            'cancelled' => '%[STATUS:CANCELLED]%',
+            'refused' => '%[STATUS:REFUSED_CLIENT]%',
+        ]);
+
+        return $stmt->rowCount() > 0;
+    }
+
+    /**
+     * @param array{
+     *   montantFactureHt:?float,
+     *   coutMateriauxTotal:float,
+     *   beneficeTotal:float,
+     *   margePercent:?float
+     * } $figures
+     */
+    public function saveRentabilityFigures(int $companyId, int $projectId, array $figures): void
+    {
+        $pdo = Connection::pdo();
+        $marge = $figures['margePercent'];
+        $stmt = $pdo->prepare('
+            UPDATE Project
+            SET montantFactureHt = :montantHt,
+                coutMateriauxTotal = :coutMat,
+                beneficeTotal = :benef,
+                margePercent = :marge,
+                rentabiliteStatut = "renseignee",
+                rentabiliteRenseigneeAt = COALESCE(rentabiliteRenseigneeAt, NOW()),
+                updatedAt = NOW()
+            WHERE companyId = :companyId
+              AND id = :projectId
+        ');
+        $stmt->execute([
+            'montantHt' => $figures['montantFactureHt'],
+            'coutMat' => $figures['coutMateriauxTotal'],
+            'benef' => $figures['beneficeTotal'],
+            'marge' => $marge,
+            'companyId' => $companyId,
+            'projectId' => $projectId,
+        ]);
+    }
+
+    public function countRentabilityToFill(int $companyId): int
+    {
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            SELECT COUNT(*) AS c
+            FROM Project p
+            WHERE p.companyId = :companyId
+              AND (p.status = "completed" OR p.actualEndDate IS NOT NULL)
+              AND p.rentabiliteStatut = "a_renseigner"
+              AND (p.notes IS NULL OR (p.notes NOT LIKE :cancelled AND p.notes NOT LIKE :refused))
+        ');
+        $stmt->execute([
+            'companyId' => $companyId,
+            'cancelled' => '%[STATUS:CANCELLED]%',
+            'refused' => '%[STATUS:REFUSED_CLIENT]%',
+        ]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return (int) ($row['c'] ?? 0);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listRentabilityToFill(int $companyId, int $limit = 200): array
+    {
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            SELECT
+                p.id,
+                p.name,
+                p.actualEndDate,
+                p.montantFactureHt,
+                p.coutMateriauxTotal,
+                c.name AS clientName
+            FROM Project p
+            INNER JOIN Client c
+                ON c.id = p.clientId
+               AND c.companyId = p.companyId
+            WHERE p.companyId = :companyId
+              AND (p.status = "completed" OR p.actualEndDate IS NOT NULL)
+              AND p.rentabiliteStatut = "a_renseigner"
+              AND (p.notes IS NULL OR (p.notes NOT LIKE :cancelled AND p.notes NOT LIKE :refused))
+            ORDER BY (p.actualEndDate IS NULL) ASC, p.actualEndDate DESC, p.id DESC
+            LIMIT :limit
+        ');
+        $stmt->bindValue('companyId', $companyId, PDO::PARAM_INT);
+        $stmt->bindValue('cancelled', '%[STATUS:CANCELLED]%', PDO::PARAM_STR);
+        $stmt->bindValue('refused', '%[STATUS:REFUSED_CLIENT]%', PDO::PARAM_STR);
+        $stmt->bindValue('limit', max(1, $limit), PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listRentabilityHistory(int $companyId, int $limit = 200): array
+    {
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            SELECT
+                p.id,
+                p.name,
+                p.actualEndDate,
+                p.montantFactureHt,
+                p.beneficeTotal,
+                p.margePercent,
+                p.rentabiliteRenseigneeAt,
+                c.name AS clientName
+            FROM Project p
+            INNER JOIN Client c
+                ON c.id = p.clientId
+               AND c.companyId = p.companyId
+            WHERE p.companyId = :companyId
+              AND (p.status = "completed" OR p.actualEndDate IS NOT NULL)
+              AND p.rentabiliteStatut = "renseignee"
+              AND (p.notes IS NULL OR (p.notes NOT LIKE :cancelled AND p.notes NOT LIKE :refused))
+            ORDER BY p.rentabiliteRenseigneeAt DESC, p.id DESC
+            LIMIT :limit
+        ');
+        $stmt->bindValue('companyId', $companyId, PDO::PARAM_INT);
+        $stmt->bindValue('cancelled', '%[STATUS:CANCELLED]%', PDO::PARAM_STR);
+        $stmt->bindValue('refused', '%[STATUS:REFUSED_CLIENT]%', PDO::PARAM_STR);
+        $stmt->bindValue('limit', max(1, $limit), PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
+     * CA = somme montantFactureHt ; bénéfice = somme beneficeTotal (rentabilité renseignée).
+     *
+     * @return array{ca: float, benefice: float}
+     */
+    public function aggregateRentabilityKpi(int $companyId, string $periodStartYmd, string $periodEndYmd): array
+    {
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            SELECT
+                COALESCE(SUM(CASE WHEN montantFactureHt IS NOT NULL THEN montantFactureHt ELSE 0 END), 0) AS ca,
+                COALESCE(SUM(
+                    CASE
+                        WHEN rentabiliteStatut = "renseignee" AND beneficeTotal IS NOT NULL THEN beneficeTotal
+                        ELSE 0
+                    END
+                ), 0) AS benefice
+            FROM Project p
+            WHERE p.companyId = :companyId
+              AND p.actualEndDate IS NOT NULL
+              AND p.actualEndDate >= :d1
+              AND p.actualEndDate <= :d2
+              AND (p.notes IS NULL OR (p.notes NOT LIKE :cancelled AND p.notes NOT LIKE :refused))
+        ');
+        $stmt->execute([
+            'companyId' => $companyId,
+            'd1' => $periodStartYmd,
+            'd2' => $periodEndYmd,
+            'cancelled' => '%[STATUS:CANCELLED]%',
+            'refused' => '%[STATUS:REFUSED_CLIENT]%',
+        ]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        return [
+            'ca' => round((float) ($row['ca'] ?? 0), 2),
+            'benefice' => round((float) ($row['benefice'] ?? 0), 2),
+        ];
     }
 }
 

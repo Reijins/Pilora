@@ -61,6 +61,12 @@ declare(strict_types=1);
                                     <p class="muted" style="margin:4px 0 0;">JPG, PNG, WebP ou GIF — max 2 Mo. Laisser vide pour conserver le logo actuel.</p>
                                 </div>
                                 <div class="field">
+                                    <label class="label" for="work_hours_per_day">Heures de travail par jour</label>
+                                    <?php $whCompany = is_numeric(($companyRow['workHoursPerDay'] ?? null)) ? (float) $companyRow['workHoursPerDay'] : 8.0; ?>
+                                    <input class="input" id="work_hours_per_day" name="work_hours_per_day" type="number" step="0.25" min="0.25" max="24" value="<?= htmlspecialchars((string) $whCompany, ENT_QUOTES, 'UTF-8') ?>">
+                                    <p class="muted" style="margin:4px 0 0;">Utilisé pour convertir jours ↔ heures sur les temps passés chantier (défaut 8 h).</p>
+                                </div>
+                                <div class="field">
                                     <label class="label" for="vat_rate">Taux de TVA (%)</label>
                                     <input class="input" id="vat_rate" name="vat_rate" type="number" step="0.01" min="0" max="100" value="<?= htmlspecialchars((string) ($smtp['vat_rate'] ?? 20), ENT_QUOTES, 'UTF-8') ?>">
                                 </div>
@@ -501,6 +507,7 @@ declare(strict_types=1);
                                     <tr>
                                         <th>Nom</th>
                                         <th>Email</th>
+                                        <th>Coût horaire (€)</th>
                                         <th>Statut</th>
                                         <th>Rôles</th>
                                     </tr>
@@ -516,6 +523,15 @@ declare(strict_types=1);
                                         <tr>
                                             <td><?= htmlspecialchars((string) ($user['fullName'] ?? '—'), ENT_QUOTES, 'UTF-8') ?></td>
                                             <td><?= htmlspecialchars((string) ($user['email'] ?? '—'), ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td>
+                                                <form method="POST" action="<?= htmlspecialchars($basePath . '/settings/users/cout-horaire', ENT_QUOTES, 'UTF-8') ?>" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                                                    <input type="hidden" name="user_id" value="<?= (int) ($user['id'] ?? 0) ?>">
+                                                    <?php $ch = $user['coutHoraire'] ?? null; ?>
+                                                    <input class="input" name="cout_horaire" type="text" inputmode="decimal" placeholder="ex. 35" value="<?= is_numeric($ch) ? htmlspecialchars(number_format((float) $ch, 2, ',', ''), ENT_QUOTES, 'UTF-8') : '' ?>" style="width:88px;">
+                                                    <button class="btn btn-secondary" type="submit" style="padding:6px 10px;">OK</button>
+                                                </form>
+                                            </td>
                                             <td><?= htmlspecialchars((string) ($user['status'] ?? '—'), ENT_QUOTES, 'UTF-8') ?></td>
                                             <td>
                                                 <?php if (!empty($rolesNames)): ?>

@@ -7,6 +7,7 @@ SET NAMES utf8mb4;
 CREATE TABLE IF NOT EXISTS Company (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   name VARCHAR(255) NOT NULL,
+  workHoursPerDay DECIMAL(5,2) NOT NULL DEFAULT 8.00,
   companyKind ENUM('tenant','platform') NOT NULL DEFAULT 'tenant',
   billingEmail VARCHAR(255) NULL,
   status ENUM('active','suspended','disabled') NOT NULL DEFAULT 'active',
@@ -31,6 +32,7 @@ CREATE TABLE IF NOT EXISTS `User` (
   passwordHash VARCHAR(255) NOT NULL,
   fullName VARCHAR(255) NULL,
   phone VARCHAR(50) NULL,
+  coutHoraire DECIMAL(10,2) NULL,
   status ENUM('active','inactive','pending','invited','disabled') NOT NULL DEFAULT 'active',
   createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -364,6 +366,12 @@ CREATE TABLE IF NOT EXISTS Project (
   sitePostalCode VARCHAR(20) NULL,
   actualStartDate DATE NULL,
   actualEndDate DATE NULL,
+  montantFactureHt DECIMAL(12,2) NULL,
+  coutMateriauxTotal DECIMAL(12,2) NULL DEFAULT 0,
+  rentabiliteStatut ENUM('a_renseigner','renseignee') NOT NULL DEFAULT 'a_renseigner',
+  rentabiliteRenseigneeAt DATETIME NULL,
+  beneficeTotal DECIMAL(12,2) NULL,
+  margePercent DECIMAL(8,2) NULL,
   notes TEXT NULL,
   createdByUserId BIGINT UNSIGNED NULL,
   createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -403,6 +411,29 @@ CREATE TABLE IF NOT EXISTS ProjectAssignment (
     FOREIGN KEY (projectId) REFERENCES Project (id)
     ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT fk_projectAssignment_user
+    FOREIGN KEY (userId) REFERENCES `User` (id)
+    ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ProjectTimeEntry (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  companyId BIGINT UNSIGNED NOT NULL,
+  projectId BIGINT UNSIGNED NOT NULL,
+  userId BIGINT UNSIGNED NOT NULL,
+  assignmentDate DATE NOT NULL,
+  durationMinutes INT UNSIGNED NOT NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_timeEntry_company_project (companyId, projectId),
+  KEY idx_timeEntry_user (companyId, userId),
+  CONSTRAINT fk_timeEntry_company
+    FOREIGN KEY (companyId) REFERENCES Company (id)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT fk_timeEntry_project
+    FOREIGN KEY (projectId) REFERENCES Project (id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_timeEntry_user
     FOREIGN KEY (userId) REFERENCES `User` (id)
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

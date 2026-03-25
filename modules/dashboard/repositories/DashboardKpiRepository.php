@@ -51,11 +51,17 @@ final class DashboardKpiRepository
             SELECT COUNT(*) AS c
             FROM Project
             WHERE companyId = :companyId
-              AND status = "in_progress"
+              AND status != "completed"
+              AND actualEndDate IS NULL
               AND plannedEndDate IS NOT NULL
               AND plannedEndDate < CURDATE()
+              AND (notes IS NULL OR (notes NOT LIKE :cancelled AND notes NOT LIKE :refused))
         ');
-        $stmt->execute(['companyId' => $companyId]);
+        $stmt->execute([
+            'companyId' => $companyId,
+            'cancelled' => '%[STATUS:CANCELLED]%',
+            'refused' => '%[STATUS:REFUSED_CLIENT]%',
+        ]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         return (int) ($row['c'] ?? 0);

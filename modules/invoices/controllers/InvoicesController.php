@@ -462,10 +462,12 @@ final class InvoicesController extends BaseController
         $canMarkPaid = in_array('invoice.mark_paid', $userContext->permissions, true);
         $canExport = in_array('invoice.export', $userContext->permissions, true);
 
-        $statusFilterRaw = $request->getQueryParam('status', '');
-        $statusFilter = is_string($statusFilterRaw) ? trim($statusFilterRaw) : '';
+        $statusFilterRaw = $request->getQueryParam('status', 'pending');
+        $statusFilter = is_string($statusFilterRaw) ? trim($statusFilterRaw) : 'pending';
+        $pendingStatuses = ['brouillon', 'envoyee', 'partiellement_payee', 'echue'];
 
         $statusLabels = [
+            'pending' => 'En attente de paiement',
             'brouillon' => 'Brouillon',
             'envoyee' => 'Envoyée',
             'partiellement_payee' => 'Partiellement payée',
@@ -479,8 +481,14 @@ final class InvoicesController extends BaseController
         try {
             $invoices = $repo->listByCompanyId(
                 companyId: $userContext->companyId,
-                status: $statusFilter !== '' ? $statusFilter : null,
+                status: ($statusFilter !== '' && $statusFilter !== 'pending') ? $statusFilter : null,
             );
+            if ($statusFilter === 'pending') {
+                $invoices = array_values(array_filter(
+                    $invoices,
+                    static fn (array $inv): bool => in_array((string) ($inv['status'] ?? ''), $pendingStatuses, true)
+                ));
+            }
         } catch (\Throwable) {
             $invoices = [];
         }
@@ -514,17 +522,24 @@ final class InvoicesController extends BaseController
             return Response::redirect('invoices');
         }
 
-        $statusFilterRaw = $request->getQueryParam('status', '');
-        $statusFilter = is_string($statusFilterRaw) ? trim($statusFilterRaw) : '';
+        $statusFilterRaw = $request->getQueryParam('status', 'pending');
+        $statusFilter = is_string($statusFilterRaw) ? trim($statusFilterRaw) : 'pending';
+        $pendingStatuses = ['brouillon', 'envoyee', 'partiellement_payee', 'echue'];
 
         $repo = new InvoiceRepository();
         $invoices = [];
         try {
             $invoices = $repo->listByCompanyId(
                 companyId: $userContext->companyId,
-                status: $statusFilter !== '' ? $statusFilter : null,
+                status: ($statusFilter !== '' && $statusFilter !== 'pending') ? $statusFilter : null,
                 limit: 500
             );
+            if ($statusFilter === 'pending') {
+                $invoices = array_values(array_filter(
+                    $invoices,
+                    static fn (array $inv): bool => in_array((string) ($inv['status'] ?? ''), $pendingStatuses, true)
+                ));
+            }
         } catch (\Throwable) {
             $invoices = [];
         }

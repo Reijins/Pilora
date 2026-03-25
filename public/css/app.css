@@ -587,6 +587,101 @@ input.input[type="radio"]{
     border-color:rgba(37,99,235,.35);
     color:var(--primary-active);
 }
+.rentability-page{
+    overflow:hidden;
+}
+.rentability-head{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:12px;
+}
+.rentability-head__back{
+    min-height:38px;
+    padding:8px 12px;
+}
+.rentability-alert{
+    margin-bottom:12px;
+}
+.rentability-filters{
+    margin-bottom:16px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:12px;
+    align-items:flex-end;
+}
+.rentability-filters__field{
+    margin:0;
+    min-width:190px;
+}
+.rentability-kpi{
+    margin-bottom:10px;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+}
+.rentability-kpi__card{
+    padding:18px;
+}
+.rentability-period-note{
+    margin:0 0 16px;
+    font-size:13px;
+}
+.rentability-period-note__pending{
+    margin-left:8px;
+    display:inline-flex;
+    align-items:center;
+    background:rgba(37,99,235,.08);
+    border:1px solid rgba(37,99,235,.16);
+    color:#1e3a8a;
+    border-radius:999px;
+    padding:3px 10px;
+    font-size:12px;
+    font-weight:600;
+}
+.rentability-tabs{
+    margin-bottom:10px;
+}
+.rentability-tab{
+    min-height:40px;
+}
+.rentability-tab__badge{
+    margin-left:6px;
+}
+.rentability-table-card{
+    border:1px solid var(--border);
+    border-radius:16px;
+    background:var(--card-bg);
+    box-shadow:var(--shadow-sm);
+    overflow:hidden;
+}
+.rentability-table-wrap{
+    margin:0;
+}
+.rentability-table-wrap .table{
+    border:none;
+    border-radius:0;
+}
+.rentability-col-title{
+    font-weight:600;
+}
+.rentability-col-client{
+    color:#334155;
+}
+.rentability-col-action{
+    text-align:right;
+    white-space:nowrap;
+}
+.rentability-positive{
+    color:#166534;
+    font-weight:600;
+}
+.rentability-negative{
+    color:#991b1b;
+    font-weight:700;
+}
+.rentability-empty{
+    text-align:center;
+    padding:20px 16px !important;
+}
 .settings-panel{
     border:1px solid var(--border);
     border-radius:14px;
@@ -1441,6 +1536,9 @@ input.input[type="radio"]{
 @media (max-width: 920px){
     .sidebar{width:210px}
     .kpi-grid{grid-template-columns:repeat(2, minmax(0, 1fr));}
+    .rentability-head{flex-direction:column; align-items:flex-start;}
+    .rentability-kpi{grid-template-columns:1fr;}
+    .rentability-col-action{text-align:left;}
     .search-bar-lg .input{min-width:0;}
     .sheet-action-grid{grid-template-columns:repeat(2, minmax(0, 1fr));}
     .contact-form-grid{grid-template-columns:1fr;}
