@@ -22,32 +22,17 @@ use Modules\Projects\Repositories\ProjectRepository;
 use Modules\Projects\Repositories\ProjectReportRepository;
 use Modules\Invoices\Services\DocumentTotalsService;
 use Modules\Invoices\Services\InvoiceAmountsService;
+use Modules\PriceLibrary\Services\PriceLineDefaultsResolver;
 use Modules\Quotes\Repositories\QuoteRepository;
 use Modules\Quotes\Repositories\QuoteSignatureRepository;
 use Modules\Quotes\Repositories\QuoteShareRepository;
 use Modules\Quotes\Services\QuoteDeliveryService;
 final class ProjectsController extends BaseController
 {
-    /**
-     * @param array<string, mixed>|null $pi Ligne bibliothèque sélectionnée (ou null).
-     * @return array{vatRate:float, revenueAccount:?string}
-     */
+    /** @param array<string, mixed>|null $pi */
     private static function resolveLineVatAndAccount(?array $pi, mixed $postedVatRaw, mixed $postedAccRaw, float $companyDefaultVat): array
     {
-        $vat = $companyDefaultVat;
-        if (is_numeric($postedVatRaw)) {
-            $vat = (float) $postedVatRaw;
-        } elseif (is_array($pi) && isset($pi['defaultVatRate']) && is_numeric($pi['defaultVatRate'])) {
-            $vat = (float) $pi['defaultVatRate'];
-        }
-        $vat = max(0.0, min(100.0, $vat));
-
-        $acc = trim((string) $postedAccRaw);
-        if ($acc === '' && is_array($pi) && isset($pi['defaultRevenueAccount'])) {
-            $acc = trim((string) $pi['defaultRevenueAccount']);
-        }
-
-        return ['vatRate' => $vat, 'revenueAccount' => $acc !== '' ? $acc : null];
+        return PriceLineDefaultsResolver::resolve($pi, $postedVatRaw, $postedAccRaw, $companyDefaultVat);
     }
 
     /** Saisie heures (formulaire affaire) → minutes stockées. */
@@ -419,6 +404,7 @@ final class ProjectsController extends BaseController
                             description: (string) $mi['description'],
                             unitLabel: null,
                             unitPrice: (float) $mi['unitPrice'],
+                            categoryId: null,
                             defaultVatRate: is_numeric($dv) ? (float) $dv : null,
                             defaultRevenueAccount: isset($mi['defaultRevenueAccount']) && $mi['defaultRevenueAccount'] !== null
                                 ? (string) $mi['defaultRevenueAccount']
@@ -962,6 +948,7 @@ final class ProjectsController extends BaseController
                         description: (string) $mi['description'],
                         unitLabel: null,
                         unitPrice: (float) $mi['unitPrice'],
+                        categoryId: null,
                         defaultVatRate: is_numeric($dv) ? (float) $dv : null,
                         defaultRevenueAccount: isset($mi['defaultRevenueAccount']) && $mi['defaultRevenueAccount'] !== null
                             ? (string) $mi['defaultRevenueAccount']

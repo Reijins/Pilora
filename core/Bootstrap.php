@@ -332,6 +332,18 @@ final class Bootstrap
             return (new PriceLibraryController())->deactivate($request, $userContext);
         });
 
+        $router->post('/price-library/category/create', function (Request $request, UserContext $userContext): Response {
+            return (new PriceLibraryController())->createCategory($request, $userContext);
+        });
+
+        $router->post('/price-library/category/update', function (Request $request, UserContext $userContext): Response {
+            return (new PriceLibraryController())->updateCategory($request, $userContext);
+        });
+
+        $router->get('/price-library/category/new', function (Request $request, UserContext $userContext): Response {
+            return (new PriceLibraryController())->categoryNew($request, $userContext);
+        });
+
         $router->get('/planning', function (Request $request, UserContext $userContext): Response {
             return (new PlanningController())->index($request, $userContext);
         });

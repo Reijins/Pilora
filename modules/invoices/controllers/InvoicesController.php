@@ -20,6 +20,7 @@ use Modules\Invoices\Services\InvoiceAccountingExportService;
 use Modules\Invoices\Services\InvoiceAmountsService;
 use Modules\Invoices\Services\LineAmountCalculator;
 use Modules\PriceLibrary\Repositories\PriceLibraryRepository;
+use Modules\PriceLibrary\Services\PriceLineDefaultsResolver;
 use Modules\Invoices\Services\InvoicePaidReceiptEmailService;
 use Modules\Projects\Repositories\ProjectRepository;
 use Modules\Quotes\Repositories\QuoteRepository;
@@ -47,26 +48,10 @@ final class InvoicesController extends BaseController
             || in_array('invoice.create', $userContext->permissions, true);
     }
 
-    /**
-     * @param array<string, mixed>|null $pi Ligne bibliothèque sélectionnée (ou null).
-     * @return array{vatRate:float, revenueAccount:?string}
-     */
+    /** @param array<string, mixed>|null $pi */
     private static function resolveLineVatAndAccount(?array $pi, mixed $postedVatRaw, mixed $postedAccRaw, float $companyDefaultVat): array
     {
-        $vat = $companyDefaultVat;
-        if (is_numeric($postedVatRaw)) {
-            $vat = (float) $postedVatRaw;
-        } elseif (is_array($pi) && isset($pi['defaultVatRate']) && is_numeric($pi['defaultVatRate'])) {
-            $vat = (float) $pi['defaultVatRate'];
-        }
-        $vat = max(0.0, min(100.0, $vat));
-
-        $acc = trim((string) $postedAccRaw);
-        if ($acc === '' && is_array($pi) && isset($pi['defaultRevenueAccount'])) {
-            $acc = trim((string) $pi['defaultRevenueAccount']);
-        }
-
-        return ['vatRate' => $vat, 'revenueAccount' => $acc !== '' ? $acc : null];
+        return PriceLineDefaultsResolver::resolve($pi, $postedVatRaw, $postedAccRaw, $companyDefaultVat);
     }
 
     public function exportAccounting(Request $request, UserContext $userContext): Response

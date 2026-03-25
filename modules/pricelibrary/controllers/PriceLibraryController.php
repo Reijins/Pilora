@@ -8,6 +8,7 @@ use Core\Context\UserContext;
 use Core\Http\Request;
 use Core\Http\Response;
 use Core\Security\Csrf;
+use Modules\PriceLibrary\Repositories\PriceCategoryRepository;
 use Modules\PriceLibrary\Repositories\PriceLibraryRepository;
 
 final class PriceLibraryController extends BaseController
@@ -37,6 +38,19 @@ final class PriceLibraryController extends BaseController
         return in_array('price.library.create', $userContext->permissions, true);
     }
 
+    private static function parseVatRateOrNull(mixed $raw): ?float
+    {
+        $s = str_replace(',', '.', trim((string) $raw));
+        if ($s === '') {
+            return null;
+        }
+        if (!is_numeric($s)) {
+            throw new \InvalidArgumentException('Taux TVA invalide.');
+        }
+
+        return max(0.0, min(100.0, (float) $s));
+    }
+
     public function index(Request $request, UserContext $userContext): Response
     {
         if ($userContext->userId === null || $userContext->companyId === null) {
@@ -56,11 +70,18 @@ final class PriceLibraryController extends BaseController
         $subTab = in_array($subRaw, ['active', 'inactive'], true) ? $subRaw : 'active';
 
         $repo = new PriceLibraryRepository();
+        $catRepo = new PriceCategoryRepository();
         $items = [];
+        $categories = [];
         try {
             $items = $repo->listByCompanyId($userContext->companyId, false, 500);
         } catch (\Throwable) {
             $items = [];
+        }
+        try {
+            $categories = $catRepo->listByCompanyId($userContext->companyId, false, 500);
+        } catch (\Throwable) {
+            $categories = [];
         }
 
         $activeItems = [];
@@ -81,6 +102,7 @@ final class PriceLibraryController extends BaseController
             'csrfToken' => Csrf::token(),
             'activeItems' => $activeItems,
             'inactiveItems' => $inactiveItems,
+            'categories' => $categories,
             'subTab' => $subTab,
             'flashMessage' => $request->getQueryParam('msg', null),
             'flashError' => $request->getQueryParam('err', null),
@@ -102,6 +124,7 @@ final class PriceLibraryController extends BaseController
         return $this->renderPage('price_library/new.php', [
             'pageTitle' => 'Nouvelle prestation',
             'csrfToken' => Csrf::token(),
+            'categories' => (new PriceCategoryRepository())->listByCompanyId($userContext->companyId, true, 500),
             'error' => $errStr,
         ]);
     }
@@ -126,15 +149,20 @@ final class PriceLibraryController extends BaseController
         $unitPriceRaw = $request->getBodyParam('unit_price', '0');
         $estimatedTimeRaw = $request->getBodyParam('estimated_time_hours', null);
         $status = trim((string) $request->getBodyParam('status', 'active'));
-        $defaultVatRaw = str_replace(',', '.', trim((string) $request->getBodyParam('default_vat_rate', '')));
-        $defaultVat = null;
-        if ($defaultVatRaw !== '') {
-            if (!is_numeric($defaultVatRaw)) {
-                return Response::redirect('price-library/new?err=' . rawurlencode('Taux de TVA défaut invalide.'));
-            }
-            $defaultVat = max(0.0, min(100.0, (float) $defaultVatRaw));
+        try {
+            $defaultVat = self::parseVatRateOrNull($request->getBodyParam('default_vat_rate', ''));
+        } catch (\InvalidArgumentException) {
+            return Response::redirect('price-library/new?err=' . rawurlencode('Taux de TVA défaut invalide.'));
         }
         $defaultRevAcc = trim((string) $request->getBodyParam('default_revenue_account', ''));
+        $categoryIdRaw = $request->getBodyParam('category_id', 0);
+        $categoryId = is_numeric($categoryIdRaw) ? (int) $categoryIdRaw : 0;
+        if ($categoryId > 0) {
+            $cat = (new PriceCategoryRepository())->findByCompanyAndId($userContext->companyId, $categoryId);
+            if (!is_array($cat)) {
+                return Response::redirect('price-library/new?err=' . rawurlencode('Catégorie invalide.'));
+            }
+        }
 
         if ($name === '') {
             return Response::redirect('price-library/new?err=' . rawurlencode('Le nom est obligatoire.'));
@@ -158,6 +186,7 @@ final class PriceLibraryController extends BaseController
                 description: $description !== '' ? $description : null,
                 unitLabel: $unitLabel !== '' ? $unitLabel : null,
                 unitPrice: $unitPrice,
+                categoryId: $categoryId > 0 ? $categoryId : null,
                 defaultVatRate: $defaultVat,
                 defaultRevenueAccount: $defaultRevAcc !== '' ? $defaultRevAcc : null,
                 estimatedTimeMinutes: $estimatedTime,
@@ -198,6 +227,7 @@ final class PriceLibraryController extends BaseController
             'pageTitle' => 'Modifier la prestation',
             'csrfToken' => Csrf::token(),
             'item' => $row,
+            'categories' => (new PriceCategoryRepository())->listByCompanyId($userContext->companyId, true, 500),
             'error' => $errStr,
         ]);
     }
@@ -242,15 +272,20 @@ final class PriceLibraryController extends BaseController
         if ($unitPrice < 0) {
             return Response::redirect('price-library/edit?id=' . $id . '&err=' . rawurlencode('Prix unitaire invalide.'));
         }
-        $defaultVatRaw = str_replace(',', '.', trim((string) $request->getBodyParam('default_vat_rate', '')));
-        $defaultVatVal = null;
-        if ($defaultVatRaw !== '') {
-            if (!is_numeric($defaultVatRaw)) {
-                return Response::redirect('price-library/edit?id=' . $id . '&err=' . rawurlencode('Taux de TVA défaut invalide.'));
-            }
-            $defaultVatVal = max(0.0, min(100.0, (float) $defaultVatRaw));
+        try {
+            $defaultVatVal = self::parseVatRateOrNull($request->getBodyParam('default_vat_rate', ''));
+        } catch (\InvalidArgumentException) {
+            return Response::redirect('price-library/edit?id=' . $id . '&err=' . rawurlencode('Taux de TVA défaut invalide.'));
         }
         $defaultRevAcc = trim((string) $request->getBodyParam('default_revenue_account', ''));
+        $categoryIdRaw = $request->getBodyParam('category_id', 0);
+        $categoryId = is_numeric($categoryIdRaw) ? (int) $categoryIdRaw : 0;
+        if ($categoryId > 0) {
+            $cat = (new PriceCategoryRepository())->findByCompanyAndId($userContext->companyId, $categoryId);
+            if (!is_array($cat)) {
+                return Response::redirect('price-library/edit?id=' . $id . '&err=' . rawurlencode('Catégorie invalide.'));
+            }
+        }
         try {
             $estimatedTime = self::parseEstimatedTimeHoursToMinutes($estimatedTimeRaw);
         } catch (\InvalidArgumentException) {
@@ -263,6 +298,7 @@ final class PriceLibraryController extends BaseController
                 'description' => $description !== '' ? $description : null,
                 'unitLabel' => $unitLabel !== '' ? $unitLabel : null,
                 'unitPrice' => $unitPrice,
+                'categoryId' => $categoryId > 0 ? $categoryId : null,
                 'defaultVatRate' => $defaultVatVal,
                 'defaultRevenueAccount' => $defaultRevAcc,
                 'estimatedTimeMinutes' => $estimatedTime,
@@ -351,6 +387,7 @@ final class PriceLibraryController extends BaseController
                 'description' => isset($row['description']) ? (string) $row['description'] : null,
                 'unitLabel' => isset($row['unitLabel']) ? (string) $row['unitLabel'] : null,
                 'unitPrice' => (float) ($row['unitPrice'] ?? 0),
+                'categoryId' => isset($row['categoryId']) && is_numeric($row['categoryId']) ? (int) $row['categoryId'] : null,
                 'defaultVatRate' => $defVat,
                 'defaultRevenueAccount' => $defAcc,
                 'estimatedTimeMinutes' => isset($row['estimatedTimeMinutes']) && $row['estimatedTimeMinutes'] !== null
@@ -364,5 +401,107 @@ final class PriceLibraryController extends BaseController
 
         Csrf::rotate();
         return Response::redirect('price-library?sub=active&msg=' . rawurlencode('Prestation passée en inactive.'));
+    }
+
+    public function createCategory(Request $request, UserContext $userContext): Response
+    {
+        if ($userContext->userId === null || $userContext->companyId === null) {
+            return Response::redirect('login');
+        }
+        if (!$this->canManage($userContext)) {
+            return Response::redirect('price-library');
+        }
+        $csrf = $request->getBodyParam('csrf_token', null);
+        if (!Csrf::verify(is_string($csrf) ? $csrf : null)) {
+            return Response::redirect('price-library?err=' . rawurlencode('Requête invalide (CSRF).'));
+        }
+        $name = trim((string) $request->getBodyParam('name', ''));
+        if ($name === '') {
+            return Response::redirect('price-library?err=' . rawurlencode('Nom de catégorie requis.'));
+        }
+        try {
+            $vat = self::parseVatRateOrNull($request->getBodyParam('default_vat_rate', ''));
+        } catch (\InvalidArgumentException) {
+            return Response::redirect('price-library?err=' . rawurlencode('TVA catégorie invalide.'));
+        }
+        $account = trim((string) $request->getBodyParam('default_revenue_account', ''));
+        $status = (string) $request->getBodyParam('status', 'active');
+        try {
+            (new PriceCategoryRepository())->create(
+                $userContext->companyId,
+                $name,
+                $vat,
+                $account !== '' ? $account : null,
+                $status
+            );
+        } catch (\Throwable) {
+            return Response::redirect('price-library?err=' . rawurlencode('Création catégorie impossible.'));
+        }
+        Csrf::rotate();
+
+        return Response::redirect('price-library?msg=' . rawurlencode('Catégorie créée.'));
+    }
+
+    public function updateCategory(Request $request, UserContext $userContext): Response
+    {
+        if ($userContext->userId === null || $userContext->companyId === null) {
+            return Response::redirect('login');
+        }
+        if (!$this->canManage($userContext)) {
+            return Response::redirect('price-library');
+        }
+        $csrf = $request->getBodyParam('csrf_token', null);
+        if (!Csrf::verify(is_string($csrf) ? $csrf : null)) {
+            return Response::redirect('price-library?err=' . rawurlencode('Requête invalide (CSRF).'));
+        }
+        $id = (int) $request->getBodyParam('category_id', 0);
+        if ($id <= 0) {
+            return Response::redirect('price-library?err=' . rawurlencode('Catégorie invalide.'));
+        }
+        $repo = new PriceCategoryRepository();
+        if (!is_array($repo->findByCompanyAndId($userContext->companyId, $id))) {
+            return Response::redirect('price-library?err=' . rawurlencode('Catégorie introuvable.'));
+        }
+        $name = trim((string) $request->getBodyParam('name', ''));
+        if ($name === '') {
+            return Response::redirect('price-library?err=' . rawurlencode('Nom de catégorie requis.'));
+        }
+        try {
+            $vat = self::parseVatRateOrNull($request->getBodyParam('default_vat_rate', ''));
+        } catch (\InvalidArgumentException) {
+            return Response::redirect('price-library?err=' . rawurlencode('TVA catégorie invalide.'));
+        }
+        try {
+            $repo->updateByCompanyAndId($userContext->companyId, $id, [
+                'name' => $name,
+                'defaultVatRate' => $vat,
+                'defaultRevenueAccount' => trim((string) $request->getBodyParam('default_revenue_account', '')),
+                'status' => (string) $request->getBodyParam('status', 'active'),
+            ]);
+        } catch (\Throwable) {
+            return Response::redirect('price-library?err=' . rawurlencode('Mise à jour catégorie impossible.'));
+        }
+        Csrf::rotate();
+
+        return Response::redirect('price-library?msg=' . rawurlencode('Catégorie mise à jour.'));
+    }
+
+    public function categoryNew(Request $request, UserContext $userContext): Response
+    {
+        if ($userContext->userId === null || $userContext->companyId === null) {
+            return Response::redirect('login');
+        }
+        if (!$this->canManage($userContext)) {
+            return Response::redirect('price-library');
+        }
+
+        $err = $request->getQueryParam('err', null);
+        $errStr = is_string($err) && trim($err) !== '' ? $err : null;
+
+        return $this->renderPage('price_library/category_new.php', [
+            'pageTitle' => 'Créer une catégorie',
+            'csrfToken' => Csrf::token(),
+            'error' => $errStr,
+        ]);
     }
 }

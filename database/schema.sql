@@ -552,6 +552,24 @@ CREATE TABLE IF NOT EXISTS LeaveRequest (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ================= PRICE LIBRARY =================
+CREATE TABLE IF NOT EXISTS PriceCategory (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  companyId BIGINT UNSIGNED NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  defaultVatRate DECIMAL(5,2) NULL,
+  defaultRevenueAccount VARCHAR(32) NULL,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_priceCategory_company (companyId),
+  KEY idx_priceCategory_status (companyId, status),
+  KEY idx_priceCategory_name (companyId, name),
+  CONSTRAINT fk_priceCategory_company
+    FOREIGN KEY (companyId) REFERENCES Company (id)
+    ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS PriceLibraryItem (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   companyId BIGINT UNSIGNED NOT NULL,
@@ -560,6 +578,7 @@ CREATE TABLE IF NOT EXISTS PriceLibraryItem (
   description TEXT NULL,
   unitLabel VARCHAR(50) NULL,
   unitPrice DECIMAL(15,2) NOT NULL DEFAULT 0,
+  categoryId BIGINT UNSIGNED NULL,
   defaultVatRate DECIMAL(5,2) NULL,
   defaultRevenueAccount VARCHAR(32) NULL,
   estimatedTimeMinutes INT NULL,
@@ -570,9 +589,13 @@ CREATE TABLE IF NOT EXISTS PriceLibraryItem (
   KEY idx_priceLibrary_companyId (companyId),
   KEY idx_priceLibrary_status (companyId, status),
   KEY idx_priceLibrary_name (companyId, name),
+  KEY idx_priceLibrary_category (companyId, categoryId),
   CONSTRAINT fk_priceLibrary_company
     FOREIGN KEY (companyId) REFERENCES Company (id)
-    ON DELETE RESTRICT ON UPDATE CASCADE
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT fk_priceLibrary_category
+    FOREIGN KEY (categoryId) REFERENCES PriceCategory (id)
+    ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ================= AUDIT (plateforme) =================

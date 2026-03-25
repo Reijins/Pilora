@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 $basePath = isset($basePath) && is_string($basePath) ? $basePath : '';
+$categories = is_array($categories ?? null) ? $categories : [];
 ?>
 <section class="page">
     <div class="card">
@@ -40,12 +41,21 @@ $basePath = isset($basePath) && is_string($basePath) ? $basePath : '';
                 <label class="label" for="unit_price">Prix unitaire (€)</label>
                 <input class="input" id="unit_price" name="unit_price" type="number" step="0.01" min="0" value="0" required>
 
+                <label class="label" for="category_id">Catégorie</label>
+                <select class="input" id="category_id" name="category_id">
+                    <option value="0">Aucune catégorie</option>
+                    <?php foreach ($categories as $cat): ?>
+                        <option value="<?= (int) ($cat['id'] ?? 0) ?>"><?= htmlspecialchars((string) ($cat['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></option>
+                    <?php endforeach; ?>
+                </select>
+
                 <label class="label" for="default_vat_rate">TVA par défaut (%)</label>
                 <input class="input" id="default_vat_rate" name="default_vat_rate" type="number" step="0.01" min="0" max="100" placeholder="Ex. 20 — vide = société">
-                <p class="muted" style="margin:4px 0 0;font-size:13px;">Prérempli sur les nouvelles lignes de devis lorsque la prestation est choisie depuis la bibliothèque.</p>
+                <p class="muted" style="margin:4px 0 0;font-size:13px;">Optionnel: si vide, la valeur de la catégorie sera utilisée, sinon celle de la société.</p>
 
                 <label class="label" for="default_revenue_account">Compte de vente (numéro)</label>
                 <input class="input" id="default_revenue_account" name="default_revenue_account" type="text" maxlength="32" placeholder="70600000">
+                <p class="muted" style="margin:4px 0 0;font-size:13px;">Optionnel: si vide, le compte de la catégorie s'applique.</p>
 
                 <label class="label" for="estimated_time_hours">Temps estimé (heures)</label>
                 <input class="input" id="estimated_time_hours" name="estimated_time_hours" type="number" min="0" step="0.01" placeholder="Ex. 1,5">

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 $basePath = isset($basePath) && is_string($basePath) ? $basePath : '';
 $item = is_array($item ?? null) ? $item : [];
+$categories = is_array($categories ?? null) ? $categories : [];
 $id = (int) ($item['id'] ?? 0);
 $estMin = isset($item['estimatedTimeMinutes']) && $item['estimatedTimeMinutes'] !== null && $item['estimatedTimeMinutes'] !== ''
     ? (int) $item['estimatedTimeMinutes']
@@ -65,8 +66,19 @@ $backHref = $basePath . '/price-library?sub=' . rawurlencode($returnSub);
                 <label class="label" for="unit_price">Prix unitaire (€)</label>
                 <input class="input" id="unit_price" name="unit_price" type="number" step="0.01" min="0" value="<?= htmlspecialchars((string) ($item['unitPrice'] ?? '0'), ENT_QUOTES, 'UTF-8') ?>" required>
 
+                <?php $catId = isset($item['categoryId']) && is_numeric($item['categoryId']) ? (int) $item['categoryId'] : 0; ?>
+                <label class="label" for="category_id">Catégorie</label>
+                <select class="input" id="category_id" name="category_id">
+                    <option value="0">Aucune catégorie</option>
+                    <?php foreach ($categories as $cat): ?>
+                        <?php $cid = (int) ($cat['id'] ?? 0); ?>
+                        <option value="<?= $cid ?>" <?= $cid === $catId ? 'selected' : '' ?>><?= htmlspecialchars((string) ($cat['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></option>
+                    <?php endforeach; ?>
+                </select>
+
                 <label class="label" for="default_vat_rate">TVA par défaut (%)</label>
                 <input class="input" id="default_vat_rate" name="default_vat_rate" type="number" step="0.01" min="0" max="100" placeholder="Vide = aucune suggestion" value="<?= htmlspecialchars($defVatDisp, ENT_QUOTES, 'UTF-8') ?>">
+                <p class="muted" style="margin:4px 0 0;font-size:13px;">Optionnel: si vide, la catégorie (ou société) s'applique.</p>
 
                 <label class="label" for="default_revenue_account">Compte de vente (numéro)</label>
                 <input class="input" id="default_revenue_account" name="default_revenue_account" type="text" maxlength="32" value="<?= htmlspecialchars(trim((string) ($item['defaultRevenueAccount'] ?? '')), ENT_QUOTES, 'UTF-8') ?>">

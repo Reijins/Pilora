@@ -192,6 +192,8 @@ declare(strict_types=1);
                                 'estimatedTimeMinutes' => $it['estimatedTimeMinutes'] ?? null,
                                 'defaultVatRate' => isset($it['defaultVatRate']) && is_numeric($it['defaultVatRate']) ? (float) $it['defaultVatRate'] : null,
                                 'defaultRevenueAccount' => isset($it['defaultRevenueAccount']) && (string) $it['defaultRevenueAccount'] !== '' ? (string) $it['defaultRevenueAccount'] : null,
+                                'categoryDefaultVatRate' => isset($it['categoryDefaultVatRate']) && is_numeric($it['categoryDefaultVatRate']) ? (float) $it['categoryDefaultVatRate'] : null,
+                                'categoryDefaultRevenueAccount' => isset($it['categoryDefaultRevenueAccount']) && (string) $it['categoryDefaultRevenueAccount'] !== '' ? (string) $it['categoryDefaultRevenueAccount'] : null,
                             ];
                         }, ($priceItems ?? [])), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
                         var vatRate = <?= json_encode(isset($quoteVatRate) && is_numeric($quoteVatRate) ? (float) $quoteVatRate : 20.0) ?>;
@@ -276,12 +278,20 @@ declare(strict_types=1);
                                 if (vatIn) {
                                     if (match.defaultVatRate !== null && match.defaultVatRate !== undefined && !isNaN(Number(match.defaultVatRate))) {
                                         vatIn.value = String(match.defaultVatRate);
+                                    } else if (match.categoryDefaultVatRate !== null && match.categoryDefaultVatRate !== undefined && !isNaN(Number(match.categoryDefaultVatRate))) {
+                                        vatIn.value = String(match.categoryDefaultVatRate);
                                     } else {
                                         vatIn.value = String(vatRate);
                                     }
                                 }
                                 if (accIn) {
-                                    accIn.value = (match.defaultRevenueAccount !== null && match.defaultRevenueAccount !== undefined) ? String(match.defaultRevenueAccount) : '';
+                                    if (match.defaultRevenueAccount !== null && match.defaultRevenueAccount !== undefined && String(match.defaultRevenueAccount).trim() !== '') {
+                                        accIn.value = String(match.defaultRevenueAccount);
+                                    } else if (match.categoryDefaultRevenueAccount !== null && match.categoryDefaultRevenueAccount !== undefined && String(match.categoryDefaultRevenueAccount).trim() !== '') {
+                                        accIn.value = String(match.categoryDefaultRevenueAccount);
+                                    } else {
+                                        accIn.value = '';
+                                    }
                                 }
                                 setRowUnitLabel(row, match.unitLabel);
                                 if (saveCb) saveCb.checked = false;

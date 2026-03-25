@@ -5,6 +5,7 @@ $basePath = isset($basePath) && is_string($basePath) ? $basePath : '';
 $sub = isset($subTab) && in_array($subTab, ['active', 'inactive'], true) ? $subTab : 'active';
 $activeItems = is_array($activeItems ?? null) ? $activeItems : [];
 $inactiveItems = is_array($inactiveItems ?? null) ? $inactiveItems : [];
+$categories = is_array($categories ?? null) ? $categories : [];
 $formatEstimatedHours = static function ($minutes): string {
     if ($minutes === null || $minutes === '') {
         return '—';
@@ -57,6 +58,7 @@ $formatEstimatedHours = static function ($minutes): string {
                                 <thead>
                                 <tr>
                                     <th>Nom</th>
+                                    <th>Catégorie</th>
                                     <th>Prix unitaire</th>
                                     <th>Temps estimé (h)</th>
                                     <th>Unité</th>
@@ -68,6 +70,7 @@ $formatEstimatedHours = static function ($minutes): string {
                                     <?php foreach ($activeItems as $it): ?>
                                         <tr>
                                             <td><?= htmlspecialchars((string) ($it['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td><?= htmlspecialchars((string) (($it['categoryName'] ?? '') !== '' ? $it['categoryName'] : '—'), ENT_QUOTES, 'UTF-8') ?></td>
                                             <td><?= htmlspecialchars((string) ($it['unitPrice'] ?? '0'), ENT_QUOTES, 'UTF-8') ?> €</td>
                                             <td><?= htmlspecialchars($formatEstimatedHours($it['estimatedTimeMinutes'] ?? null), ENT_QUOTES, 'UTF-8') ?></td>
                                             <td><?= htmlspecialchars((string) ($it['unitLabel'] ?? '—'), ENT_QUOTES, 'UTF-8') ?></td>
@@ -105,7 +108,7 @@ $formatEstimatedHours = static function ($minutes): string {
                                         </tr>
                                     <?php endforeach; ?>
                                 <?php else: ?>
-                                    <tr><td colspan="<?= !empty($canCreate) ? 5 : 4 ?>" class="muted">Aucune prestation active.</td></tr>
+                                    <tr><td colspan="<?= !empty($canCreate) ? 6 : 5 ?>" class="muted">Aucune prestation active.</td></tr>
                                 <?php endif; ?>
                                 </tbody>
                             </table>
@@ -119,6 +122,7 @@ $formatEstimatedHours = static function ($minutes): string {
                                 <thead>
                                 <tr>
                                     <th>Nom</th>
+                                    <th>Catégorie</th>
                                     <th>Prix unitaire</th>
                                     <th>Temps estimé (h)</th>
                                     <th>Unité</th>
@@ -131,6 +135,7 @@ $formatEstimatedHours = static function ($minutes): string {
                                         <?php $iid = (int) ($it['id'] ?? 0); $iname = (string) ($it['name'] ?? ''); ?>
                                         <tr>
                                             <td><?= htmlspecialchars($iname, ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td><?= htmlspecialchars((string) (($it['categoryName'] ?? '') !== '' ? $it['categoryName'] : '—'), ENT_QUOTES, 'UTF-8') ?></td>
                                             <td><?= htmlspecialchars((string) ($it['unitPrice'] ?? '0'), ENT_QUOTES, 'UTF-8') ?> €</td>
                                             <td><?= htmlspecialchars($formatEstimatedHours($it['estimatedTimeMinutes'] ?? null), ENT_QUOTES, 'UTF-8') ?></td>
                                             <td><?= htmlspecialchars((string) ($it['unitLabel'] ?? '—'), ENT_QUOTES, 'UTF-8') ?></td>
@@ -167,10 +172,66 @@ $formatEstimatedHours = static function ($minutes): string {
                                         </tr>
                                     <?php endforeach; ?>
                                 <?php else: ?>
-                                    <tr><td colspan="<?= !empty($canCreate) ? 5 : 4 ?>" class="muted">Aucune prestation inactive.</td></tr>
+                                    <tr><td colspan="<?= !empty($canCreate) ? 6 : 5 ?>" class="muted">Aucune prestation inactive.</td></tr>
                                 <?php endif; ?>
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (!empty($canCreate)): ?>
+                    <div class="section-card" style="margin-top:16px;">
+                        <h3 class="section-title">Catégories de prestations</h3>
+                        <div class="section-content">
+                            <div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
+                                <a
+                                    class="btn btn-secondary btn-icon"
+                                    href="<?= htmlspecialchars($basePath . '/price-library/category/new', ENT_QUOTES, 'UTF-8') ?>"
+                                    title="Créer une catégorie"
+                                    aria-label="Créer une catégorie"
+                                >
+                                    <span aria-hidden="true">+</span>
+                                </a>
+                            </div>
+
+                            <div class="table-wrap" style="margin-top:10px;">
+                                <table class="table">
+                                    <thead>
+                                    <tr>
+                                        <th>Nom</th>
+                                        <th>TVA défaut</th>
+                                        <th>Compte défaut</th>
+                                        <th>Statut</th>
+                                        <th>Action</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    <?php if ($categories !== []): ?>
+                                        <?php foreach ($categories as $cat): ?>
+                                            <tr>
+                                                <form method="POST" action="<?= htmlspecialchars($basePath . '/price-library/category/update', ENT_QUOTES, 'UTF-8') ?>" style="display:contents;">
+                                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                                                    <input type="hidden" name="category_id" value="<?= (int) ($cat['id'] ?? 0) ?>">
+                                                    <td><input class="input" name="name" type="text" value="<?= htmlspecialchars((string) ($cat['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" required></td>
+                                                    <td><input class="input" name="default_vat_rate" type="number" step="0.01" min="0" max="100" value="<?= htmlspecialchars((string) ($cat['defaultVatRate'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"></td>
+                                                    <td><input class="input" name="default_revenue_account" type="text" maxlength="32" value="<?= htmlspecialchars((string) ($cat['defaultRevenueAccount'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"></td>
+                                                    <td>
+                                                        <select class="input" name="status">
+                                                            <option value="active" <?= ((string) ($cat['status'] ?? 'active') !== 'inactive') ? 'selected' : '' ?>>Active</option>
+                                                            <option value="inactive" <?= ((string) ($cat['status'] ?? '') === 'inactive') ? 'selected' : '' ?>>Inactive</option>
+                                                        </select>
+                                                    </td>
+                                                    <td><button class="btn btn-secondary" type="submit">Enregistrer</button></td>
+                                                </form>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <tr><td colspan="5" class="muted">Aucune catégorie pour le moment.</td></tr>
+                                    <?php endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 <?php endif; ?>

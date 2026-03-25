@@ -13,15 +13,31 @@ final class PriceLibraryRepository
         $pdo = Connection::pdo();
 
         $sql = '
-            SELECT id, code, name, description, unitLabel, unitPrice, defaultVatRate, defaultRevenueAccount,
-                   estimatedTimeMinutes, status
-            FROM PriceLibraryItem
-            WHERE companyId = :companyId
+            SELECT
+                i.id,
+                i.code,
+                i.name,
+                i.description,
+                i.unitLabel,
+                i.unitPrice,
+                i.defaultVatRate,
+                i.defaultRevenueAccount,
+                i.categoryId,
+                i.estimatedTimeMinutes,
+                i.status,
+                c.name AS categoryName,
+                c.defaultVatRate AS categoryDefaultVatRate,
+                c.defaultRevenueAccount AS categoryDefaultRevenueAccount
+            FROM PriceLibraryItem i
+            LEFT JOIN PriceCategory c
+                ON c.id = i.categoryId
+               AND c.companyId = i.companyId
+            WHERE i.companyId = :companyId
         ';
         if ($onlyActive) {
-            $sql .= ' AND status = "active" ';
+            $sql .= ' AND i.status = "active" ';
         }
-        $sql .= ' ORDER BY id DESC LIMIT :limit';
+        $sql .= ' ORDER BY i.id DESC LIMIT :limit';
 
         $stmt = $pdo->prepare($sql);
         $stmt->bindValue('companyId', $companyId, PDO::PARAM_INT);
@@ -38,6 +54,7 @@ final class PriceLibraryRepository
         ?string $description,
         ?string $unitLabel,
         float $unitPrice,
+        ?int $categoryId,
         ?float $defaultVatRate,
         ?string $defaultRevenueAccount,
         ?int $estimatedTimeMinutes,
@@ -47,10 +64,10 @@ final class PriceLibraryRepository
 
         $stmt = $pdo->prepare('
             INSERT INTO PriceLibraryItem (
-                companyId, code, name, description, unitLabel, unitPrice, defaultVatRate, defaultRevenueAccount,
+                companyId, code, name, description, unitLabel, unitPrice, categoryId, defaultVatRate, defaultRevenueAccount,
                 estimatedTimeMinutes, status, createdAt, updatedAt
             ) VALUES (
-                :companyId, :code, :name, :description, :unitLabel, :unitPrice, :defaultVatRate, :defaultRevenueAccount,
+                :companyId, :code, :name, :description, :unitLabel, :unitPrice, :categoryId, :defaultVatRate, :defaultRevenueAccount,
                 :estimatedTimeMinutes, :status, NOW(), NOW()
             )
         ');
@@ -61,6 +78,7 @@ final class PriceLibraryRepository
             'description' => $description !== '' ? $description : null,
             'unitLabel' => $unitLabel !== '' ? $unitLabel : null,
             'unitPrice' => round($unitPrice, 2),
+            'categoryId' => $categoryId !== null && $categoryId > 0 ? $categoryId : null,
             'defaultVatRate' => $defaultVatRate !== null ? round($defaultVatRate, 2) : null,
             'defaultRevenueAccount' => $defaultRevenueAccount !== null && trim($defaultRevenueAccount) !== '' ? trim($defaultRevenueAccount) : null,
             'estimatedTimeMinutes' => $estimatedTimeMinutes,
@@ -74,10 +92,27 @@ final class PriceLibraryRepository
     {
         $pdo = Connection::pdo();
         $stmt = $pdo->prepare('
-            SELECT id, companyId, code, name, description, unitLabel, unitPrice, defaultVatRate, defaultRevenueAccount,
-                   estimatedTimeMinutes, status
-            FROM PriceLibraryItem
-            WHERE companyId = :companyId AND id = :id
+            SELECT
+                i.id,
+                i.companyId,
+                i.code,
+                i.name,
+                i.description,
+                i.unitLabel,
+                i.unitPrice,
+                i.categoryId,
+                i.defaultVatRate,
+                i.defaultRevenueAccount,
+                i.estimatedTimeMinutes,
+                i.status,
+                c.name AS categoryName,
+                c.defaultVatRate AS categoryDefaultVatRate,
+                c.defaultRevenueAccount AS categoryDefaultRevenueAccount
+            FROM PriceLibraryItem i
+            LEFT JOIN PriceCategory c
+                ON c.id = i.categoryId
+               AND c.companyId = i.companyId
+            WHERE i.companyId = :companyId AND i.id = :id
             LIMIT 1
         ');
         $stmt->execute(['companyId' => $companyId, 'id' => $id]);
@@ -91,6 +126,7 @@ final class PriceLibraryRepository
      *   description:?string,
      *   unitLabel:?string,
      *   unitPrice:float,
+     *   categoryId:?int,
      *   defaultVatRate:?float|"",
      *   defaultRevenueAccount:?string,
      *   estimatedTimeMinutes:?int,
@@ -118,6 +154,7 @@ final class PriceLibraryRepository
                 description = :description,
                 unitLabel = :unitLabel,
                 unitPrice = :unitPrice,
+                categoryId = :categoryId,
                 defaultVatRate = :defaultVatRate,
                 defaultRevenueAccount = :defaultRevenueAccount,
                 estimatedTimeMinutes = :estimatedTimeMinutes,
@@ -132,6 +169,9 @@ final class PriceLibraryRepository
             'description' => $data['description'],
             'unitLabel' => $data['unitLabel'],
             'unitPrice' => round($data['unitPrice'], 2),
+            'categoryId' => isset($data['categoryId']) && is_numeric($data['categoryId']) && (int) $data['categoryId'] > 0
+                ? (int) $data['categoryId']
+                : null,
             'defaultVatRate' => $defVatSql,
             'defaultRevenueAccount' => $defAccSql,
             'estimatedTimeMinutes' => $data['estimatedTimeMinutes'],
