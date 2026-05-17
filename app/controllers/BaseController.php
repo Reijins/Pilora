@@ -110,6 +110,10 @@ abstract class BaseController
             'billingLockBanner' => $billingLockBanner,
         ], $data);
 
+        if ($layoutTemplate === 'layouts/marketing.php') {
+            require_once $viewsRoot . '/marketing/partials/ui.php';
+        }
+
         $contentHtml = View::render($viewsRoot . '/' . $viewTemplate, $dataWithBase);
 
         $html = View::render($viewsRoot . '/' . $layoutTemplate, [

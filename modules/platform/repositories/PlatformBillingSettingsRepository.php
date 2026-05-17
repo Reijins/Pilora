@@ -22,7 +22,8 @@ final class PlatformBillingSettingsRepository
      *   phone:string,
      *   email:string,
      *   website:string,
-     *   stripe_secret_key:string
+     *   stripe_secret_key:string,
+     *   stripe_webhook_secret:string
      * }
      */
     public function get(): array
@@ -36,6 +37,7 @@ final class PlatformBillingSettingsRepository
             'email' => '',
             'website' => '',
             'stripe_secret_key' => '',
+            'stripe_webhook_secret' => '',
         ];
         $p = $this->path();
         if (!is_file($p)) {

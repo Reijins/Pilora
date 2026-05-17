@@ -101,5 +101,13 @@ final class Response
         $headers = array_merge(['Content-Type' => 'application/json; charset=utf-8'], $headers);
         return new self(json_encode($data, JSON_UNESCAPED_UNICODE), $status, $headers);
     }
+
+    /**
+     * @param array<string, string> $extraHeaders
+     */
+    public function withHeaders(array $extraHeaders): self
+    {
+        return new self($this->body, $this->status, array_merge($this->headers, $extraHeaders));
+    }
 }
 

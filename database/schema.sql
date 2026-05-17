@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS Company (
   billingStatus ENUM('trial','active','past_due','cancelled') NULL,
   billingCycle ENUM('monthly','annual') NULL,
   maxSeats INT UNSIGNED NULL,
+  subscriptionStartedAt DATE NULL,
   subscriptionRenewsAt DATE NULL,
   externalBillingRef VARCHAR(120) NULL,
   createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -8,12 +8,17 @@ $canImpersonate = !empty($canImpersonate);
 $canManageCompany = !empty($canManageCompany);
 $tab = isset($companyTab) && in_array($companyTab, ['general', 'billing', 'users'], true) ? $companyTab : 'general';
 $companyUsers = is_array($companyUsers ?? null) ? $companyUsers : [];
-$renews = isset($c['subscriptionRenewsAt']) && $c['subscriptionRenewsAt'] !== null && $c['subscriptionRenewsAt'] !== ''
-    ? (string) $c['subscriptionRenewsAt']
-    : '';
-if ($renews !== '' && strlen($renews) >= 10) {
-    $renews = substr($renews, 0, 10);
-}
+$formatDate = static function (?string $raw): string {
+    if ($raw === null || $raw === '') {
+        return '';
+    }
+    $d = substr($raw, 0, 10);
+    $dt = \DateTimeImmutable::createFromFormat('Y-m-d', $d);
+
+    return $dt ? $dt->format('d/m/Y') : $d;
+};
+$packStarted = $formatDate(isset($c['subscriptionStartedAt']) ? (string) $c['subscriptionStartedAt'] : '');
+$renews = $formatDate(isset($c['subscriptionRenewsAt']) ? (string) $c['subscriptionRenewsAt'] : '');
 ?>
 <section class="page">
     <div class="card">
@@ -87,6 +92,10 @@ if ($renews !== '' && strlen($renews) >= 10) {
                                 <tr>
                                     <th>Abonnement</th>
                                     <td><?= htmlspecialchars((string) (($c['billingPlan'] ?? '') !== '' ? $c['billingPlan'] : '—'), ENT_QUOTES, 'UTF-8') ?></td>
+                                </tr>
+                                <tr>
+                                    <th>Début du pack</th>
+                                    <td><?= htmlspecialchars($packStarted !== '' ? $packStarted : '—', ENT_QUOTES, 'UTF-8') ?></td>
                                 </tr>
                                 <tr>
                                     <th>Mode de renouvellement</th>

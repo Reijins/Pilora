@@ -81,6 +81,62 @@ final class AuthService
         return true;
     }
 
+    public function establishSessionForUser(int $userId): bool
+    {
+        $user = $this->userRepository->findById($userId);
+        if ($user === null || (string) ($user['status'] ?? '') !== 'active') {
+            return false;
+        }
+
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
+        }
+
+        $ipAddress = ClientInfo::ipAddress();
+        $userAgent = ClientInfo::userAgent();
+        $companyId = (int) $user['companyId'];
+
+        $now = new \DateTimeImmutable('now');
+        $expiresAt = $now->modify('+' . Config::sessionLifetimeSeconds() . ' seconds');
+
+        $sessionToken = bin2hex(random_bytes(32));
+        $sessionId = session_id();
+        if (!is_string($sessionId) || $sessionId === '') {
+            return false;
+        }
+
+        $sessionRepo = new UserSessionRepository();
+        $sessionRepo->revokeActiveSessionsByUserIp(
+            userId: $userId,
+            companyId: $companyId,
+            ipAddress: $ipAddress,
+        );
+
+        $_SESSION['user_id'] = $userId;
+        $_SESSION['company_id'] = $companyId;
+        $_SESSION['session_token'] = $sessionToken;
+        $_SESSION['roles'] = [];
+        $_SESSION['permissions'] = [];
+        $_SESSION['last_activity_at'] = time();
+
+        try {
+            $sessionRepo->createSession([
+                'userId' => $userId,
+                'companyId' => $companyId,
+                'ipAddress' => $ipAddress,
+                'userAgent' => $userAgent,
+                'sessionId' => $sessionId,
+                'sessionToken' => $sessionToken,
+                'lastActivityAt' => $now->format('Y-m-d H:i:s'),
+                'expiresAt' => $expiresAt->format('Y-m-d H:i:s'),
+            ]);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return true;
+    }
+
     public function logout(): void
     {
         if (session_status() !== PHP_SESSION_ACTIVE) {

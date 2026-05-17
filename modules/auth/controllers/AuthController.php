@@ -24,13 +24,19 @@ final class AuthController extends BaseController
 
     public function showLogin(Request $request, UserContext $userContext): Response
     {
+        if ($userContext->userId !== null) {
+            return Response::redirect('dashboard');
+        }
+
         $error = (string) $request->getQueryParam('error', '');
+        $msg = trim((string) $request->getQueryParam('msg', ''));
 
         return $this->renderPage('auth/login.php', [
-            'pageTitle' => 'Connexion',
+            'pageTitle' => 'Connexion — Pilora',
             'error' => $error !== '' ? $error : null,
+            'flashMessage' => $msg !== '' ? $msg : null,
             'csrfToken' => Csrf::token(),
-        ]);
+        ], 'layouts/auth.php');
     }
 
     public function login(Request $request, UserContext $userContext): Response
@@ -38,10 +44,10 @@ final class AuthController extends BaseController
         $csrfToken = $request->getBodyParam('csrf_token', null);
         if (!Csrf::verify(is_string($csrfToken) ? $csrfToken : null)) {
             return $this->renderPage('auth/login.php', [
-                'pageTitle' => 'Connexion',
+                'pageTitle' => 'Connexion — Pilora',
                 'error' => 'Requête invalide (CSRF).',
                 'csrfToken' => Csrf::token(),
-            ]);
+            ], 'layouts/auth.php');
         }
 
         $email = trim((string) $request->getBodyParam('email', ''));
@@ -52,18 +58,19 @@ final class AuthController extends BaseController
 
         if (!$emailValid || !$passwordValid) {
             return $this->renderPage('auth/login.php', [
-                'pageTitle' => 'Connexion',
+                'pageTitle' => 'Connexion — Pilora',
                 'error' => 'Email ou mot de passe invalide.',
-            ]);
+                'csrfToken' => Csrf::token(),
+            ], 'layouts/auth.php');
         }
 
         $ok = $this->authService->login($email, $password);
         if (!$ok) {
             return $this->renderPage('auth/login.php', [
-                'pageTitle' => 'Connexion',
+                'pageTitle' => 'Connexion — Pilora',
                 'error' => 'Identifiants incorrects ou compte inactif.',
                 'csrfToken' => Csrf::token(),
-            ]);
+            ], 'layouts/auth.php');
         }
 
         Csrf::rotate();

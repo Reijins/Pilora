@@ -139,12 +139,19 @@ final class SettingsController extends BaseController
         $nextRenew = (new \DateTimeImmutable('today'));
         $nextRenew = $cycle === 'annual' ? $nextRenew->modify('+1 year') : $nextRenew->modify('+1 month');
 
+        $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
+        $existing = (new CompanyRepository())->findById($userContext->companyId);
+        $startedAt = is_array($existing) && !empty($existing['subscriptionStartedAt'])
+            ? (string) $existing['subscriptionStartedAt']
+            : $today;
+
         try {
             (new CompanyRepository())->updateBilling($userContext->companyId, [
                 'billingPlan' => (string) ($selected['name'] ?? ''),
                 'billingStatus' => 'active',
                 'billingCycle' => $cycle,
                 'maxSeats' => max(0, (int) ($selected['maxUsers'] ?? 0)),
+                'subscriptionStartedAt' => substr($startedAt, 0, 10),
                 'subscriptionRenewsAt' => $nextRenew->format('Y-m-d'),
                 'externalBillingRef' => null,
             ]);

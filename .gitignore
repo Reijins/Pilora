@@ -11,3 +11,4 @@ storage/settings/smtp_company_*.json
 
 # Logs locaux
 storage/logs/*.log
+notes.txt

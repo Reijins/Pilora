@@ -1,8 +1,11 @@
 <?php
 declare(strict_types=1);
 $basePath = isset($basePath) && is_string($basePath) ? $basePath : '';
-$tab = isset($platformTab) && in_array($platformTab, ['companies', 'packs', 'audit', 'invoices', 'users', 'settings'], true) ? $platformTab : 'companies';
+$tab = isset($platformTab) && in_array($platformTab, ['companies', 'packs', 'audit', 'invoices', 'users', 'demos', 'settings'], true) ? $platformTab : 'companies';
+$demoRequests = is_array($demoRequests ?? null) ? $demoRequests : [];
 $platformBillingSettings = is_array($platformBillingSettings ?? null) ? $platformBillingSettings : [];
+$platformSmtpSettings = is_array($platformSmtpSettings ?? null) ? $platformSmtpSettings : [];
+$smtp = $platformSmtpSettings;
 $companies = is_array($companies ?? null) ? $companies : [];
 $packs = is_array($packs ?? null) ? $packs : [];
 $auditRows = is_array($auditRows ?? null) ? $auditRows : [];
@@ -62,41 +65,95 @@ $currentUserId = (int) ($currentUserId ?? 0);
                     </table>
                 </div>
             <?php elseif ($tab === 'settings'): ?>
-                <p class="muted" style="margin-bottom:12px;">Coordonnées légales et bancaires affichées sur les factures (entête Pilora). Chaque société peut aussi renseigner sa clé Stripe dans <strong>Paramètres → Paramètres généraux</strong> ; la clé ci-dessous sert de secours si la clé société est vide (ex. scripts ou environnement unique).</p>
-                <form method="post" action="<?= htmlspecialchars($basePath . '/platform/settings/billing/save', ENT_QUOTES, 'UTF-8') ?>" class="form" style="max-width:640px;">
-                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) ($csrfToken ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                    <label class="label" for="legal_name">Raison sociale / nom commercial</label>
-                    <input class="input" id="legal_name" name="legal_name" type="text" value="<?= htmlspecialchars((string) ($platformBillingSettings['legal_name'] ?? 'Pilora'), ENT_QUOTES, 'UTF-8') ?>">
+                <?php
+                $settingsSubRaw = (string) ($platformSettingsSub ?? 'legal');
+                $settingsSub = in_array($settingsSubRaw, ['legal', 'smtp', 'email-billing', 'email-welcome', 'email-demo'], true)
+                    ? $settingsSubRaw
+                    : 'legal';
+                if (!$canBilling && $settingsSub !== 'legal') {
+                    $settingsSub = 'legal';
+                }
+                $settingsBase = $basePath . '/platform/companies?tab=settings';
+                $smtp = $platformSmtpSettings;
+                ?>
+                <nav class="email-template-subtabs" role="tablist" aria-label="Paramètres Pilora" style="margin-bottom:20px;">
+                    <a class="btn btn-secondary email-template-subtab <?= $settingsSub === 'legal' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($settingsBase . '&sub=legal', ENT_QUOTES, 'UTF-8') ?>">Coordonnées &amp; facturation</a>
+                    <?php if ($canBilling): ?>
+                        <a class="btn btn-secondary email-template-subtab <?= $settingsSub === 'smtp' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($settingsBase . '&sub=smtp', ENT_QUOTES, 'UTF-8') ?>">SMTP</a>
+                        <a class="btn btn-secondary email-template-subtab <?= $settingsSub === 'email-billing' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($settingsBase . '&sub=email-billing', ENT_QUOTES, 'UTF-8') ?>">Email — Abonnement</a>
+                        <a class="btn btn-secondary email-template-subtab <?= $settingsSub === 'email-welcome' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($settingsBase . '&sub=email-welcome', ENT_QUOTES, 'UTF-8') ?>">Email — Bienvenue</a>
+                        <a class="btn btn-secondary email-template-subtab <?= $settingsSub === 'email-demo' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($settingsBase . '&sub=email-demo', ENT_QUOTES, 'UTF-8') ?>">Email — Démo</a>
+                    <?php endif; ?>
+                </nav>
+                <?php
+                if ($settingsSub === 'smtp') {
+                    require __DIR__ . '/partials/platform_settings_smtp.php';
+                } elseif ($settingsSub === 'email-billing') {
+                    require __DIR__ . '/partials/platform_settings_email_billing.php';
+                } elseif ($settingsSub === 'email-welcome') {
+                    require __DIR__ . '/partials/platform_settings_email_welcome.php';
+                } elseif ($settingsSub === 'email-demo') {
+                    require __DIR__ . '/partials/platform_settings_email_demo.php';
+                } else {
+                    require __DIR__ . '/partials/platform_settings_legal.php';
+                }
+                ?>
 
-                    <label class="label" for="address">Adresse postale</label>
-                    <textarea class="input" id="address" name="address" rows="3" placeholder="Rue, CP, ville"><?= htmlspecialchars((string) ($platformBillingSettings['address'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea>
+            <?php elseif ($tab === 'demos'): ?>
+                <p class="muted" style="margin-bottom:12px;">Demandes reçues depuis le formulaire public <a href="<?= htmlspecialchars($basePath . '/demo', ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener">/demo</a>.</p>
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Contact</th>
+                                <th>Entreprise</th>
+                                <th>Message</th>
+                                <th>Emails</th>
+                                <th>Statut</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php if ($demoRequests !== []): foreach ($demoRequests as $dr): ?>
+                            <?php
+                            $drId = (int) ($dr['id'] ?? 0);
+                            $drStatus = (string) ($dr['status'] ?? 'new');
+                            $drNotes = (string) ($dr['notes'] ?? '');
+                            ?>
+                            <tr>
+                                <td><?= htmlspecialchars((string) ($dr['createdAt'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                                <td>
+                                    <strong><?= htmlspecialchars((string) ($dr['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></strong><br>
+                                    <a href="mailto:<?= htmlspecialchars((string) ($dr['email'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars((string) ($dr['email'] ?? ''), ENT_QUOTES, 'UTF-8') ?></a>
+                                </td>
+                                <td><?= htmlspecialchars((string) (($dr['companyName'] ?? '') !== '' ? $dr['companyName'] : '—'), ENT_QUOTES, 'UTF-8') ?></td>
+                                <td style="max-width:220px;white-space:pre-wrap;"><?= htmlspecialchars((string) (($dr['message'] ?? '') !== '' ? $dr['message'] : '—'), ENT_QUOTES, 'UTF-8') ?></td>
+                                <td class="muted" style="font-size:0.85rem;">
+                                    <?php if (!empty($dr['ackSentAt'])): ?>Accusé<?php else: ?>Accusé —<?php endif; ?><br>
+                                    <?php if (!empty($dr['notifySentAt'])): ?>Notif. équipe<?php else: ?>Notif. —<?php endif; ?>
+                                </td>
+                                <td>
+                                    <form method="post" action="<?= htmlspecialchars($basePath . '/platform/demo-requests/update', ENT_QUOTES, 'UTF-8') ?>" class="form" style="min-width:200px;">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) ($csrfToken ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                        <input type="hidden" name="id" value="<?= $drId ?>">
+                                        <select class="input" name="status" style="margin-bottom:6px;">
+                                            <option value="new"<?= $drStatus === 'new' ? ' selected' : '' ?>>Nouveau</option>
+                                            <option value="contacted"<?= $drStatus === 'contacted' ? ' selected' : '' ?>>Contacté</option>
+                                            <option value="closed"<?= $drStatus === 'closed' ? ' selected' : '' ?>>Clôturé</option>
+                                            <option value="spam"<?= $drStatus === 'spam' ? ' selected' : '' ?>>Spam</option>
+                                        </select>
+                                        <textarea class="input" name="notes" rows="2" placeholder="Notes internes"><?= htmlspecialchars($drNotes, ENT_QUOTES, 'UTF-8') ?></textarea>
+                                        <button class="btn btn-secondary btn-sm" type="submit" style="margin-top:6px;">Enregistrer</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; else: ?>
+                            <tr><td colspan="6" class="muted">Aucune demande pour le moment.</td></tr>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
 
-                    <div class="settings-grid" style="grid-template-columns: repeat(2, minmax(0,1fr)); gap:12px;">
-                        <div>
-                            <label class="label" for="siret">SIRET</label>
-                            <input class="input" id="siret" name="siret" type="text" value="<?= htmlspecialchars((string) ($platformBillingSettings['siret'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                        </div>
-                        <div>
-                            <label class="label" for="phone">Téléphone</label>
-                            <input class="input" id="phone" name="phone" type="text" value="<?= htmlspecialchars((string) ($platformBillingSettings['phone'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                        </div>
-                    </div>
-
-                    <label class="label" for="email">Email affiché</label>
-                    <input class="input" id="email" name="email" type="email" value="<?= htmlspecialchars((string) ($platformBillingSettings['email'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-
-                    <label class="label" for="website">Site web (optionnel)</label>
-                    <input class="input" id="website" name="website" type="url" placeholder="https://" value="<?= htmlspecialchars((string) ($platformBillingSettings['website'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-
-                    <label class="label" for="rib">RIB / IBAN (texte libre)</label>
-                    <textarea class="input" id="rib" name="rib" rows="4" placeholder="IBAN, BIC…"><?= htmlspecialchars((string) ($platformBillingSettings['rib'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea>
-
-                    <label class="label" for="stripe_secret_key">Clé secrète Stripe (sk_…)</label>
-                    <input class="input" id="stripe_secret_key" name="stripe_secret_key" type="password" autocomplete="new-password" placeholder="Laisser vide pour ne pas modifier la valeur enregistrée" value="">
-                    <p class="muted field-help" style="margin-top:4px;">Saisissez une nouvelle clé uniquement pour la remplacer ; la valeur actuelle n’est pas affichée pour des raisons de sécurité.</p>
-
-                    <button class="btn btn-primary" type="submit">Enregistrer</button>
-                </form>
             <?php elseif ($tab === 'packs' && $canBilling): ?>
                 <p class="muted" style="margin-bottom:12px;">Définissez vos offres (prix, cycle et date de prochain renouvellement). Un script cron peut ensuite déclencher l’envoi auto des factures.</p>
                 <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom:16px; align-items:center;">

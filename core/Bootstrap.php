@@ -26,6 +26,9 @@ use Modules\Projects\Controllers\ProjectPhotosController;
 use Modules\PriceLibrary\Controllers\PriceLibraryController;
 use Modules\Platform\Repositories\PackRepository;
 use Modules\Platform\Controllers\PlatformController;
+use Modules\Marketing\Controllers\MarketingController;
+use Modules\Marketing\Services\MarketingSeoService;
+use Modules\Signup\Controllers\SignupController;
 
 final class Bootstrap
 {
@@ -72,8 +75,62 @@ final class Bootstrap
 
     private function registerRoutes(Router $router): void
     {
-        $router->get('/', function (Request $request, UserContext $userContext): Response {
-            return (new DashboardController())->index($request, $userContext);
+        $marketing = new MarketingController();
+
+        $router->get('/', function (Request $request, UserContext $userContext) use ($marketing): Response {
+            return $marketing->home($request, $userContext);
+        });
+
+        $router->get('/tarifs', function (Request $request, UserContext $userContext) use ($marketing): Response {
+            return $marketing->tarifs($request, $userContext);
+        });
+
+        $router->get('/fonctionnalites', function (Request $request, UserContext $userContext) use ($marketing): Response {
+            return $marketing->fonctionnalitesIndex($request, $userContext);
+        });
+
+        foreach ((new MarketingSeoService())->featurePages() as $featureRoute) {
+            $slug = (string) $featureRoute['slug'];
+            $router->get('/fonctionnalites/' . $slug, function (Request $request, UserContext $userContext) use ($marketing): Response {
+                return $marketing->fonctionnaliteShow($request, $userContext);
+            });
+        }
+
+        $router->get('/faq', function (Request $request, UserContext $userContext) use ($marketing): Response {
+            return $marketing->faq($request, $userContext);
+        });
+
+        $router->get('/demo', function (Request $request, UserContext $userContext) use ($marketing): Response {
+            return $marketing->demo($request, $userContext);
+        });
+
+        $router->post('/demo', function (Request $request, UserContext $userContext) use ($marketing): Response {
+            return $marketing->demoSubmit($request, $userContext);
+        });
+
+        $signup = new SignupController();
+        $router->get('/inscription', function (Request $request, UserContext $userContext) use ($signup): Response {
+            return $signup->showForm($request, $userContext);
+        });
+        $router->post('/inscription', function (Request $request, UserContext $userContext) use ($signup): Response {
+            return $signup->submit($request, $userContext);
+        });
+        $router->get('/inscription/succes', function (Request $request, UserContext $userContext) use ($signup): Response {
+            return $signup->success($request, $userContext);
+        });
+        $router->get('/inscription/annule', function (Request $request, UserContext $userContext) use ($signup): Response {
+            return $signup->cancelled($request, $userContext);
+        });
+        $router->post('/webhooks/stripe/platform', function (Request $request, UserContext $userContext) use ($signup): Response {
+            return $signup->stripeWebhook($request, $userContext);
+        });
+
+        $router->get('/robots.txt', function (Request $request, UserContext $userContext) use ($marketing): Response {
+            return $marketing->robots($request, $userContext);
+        });
+
+        $router->get('/sitemap.xml', function (Request $request, UserContext $userContext) use ($marketing): Response {
+            return $marketing->sitemap($request, $userContext);
         });
 
         $router->get('/dashboard', function (Request $request, UserContext $userContext): Response {
@@ -414,6 +471,18 @@ final class Bootstrap
 
         $router->post('/platform/settings/billing/save', function (Request $request, UserContext $userContext): Response {
             return (new PlatformController())->platformBillingSave($request, $userContext);
+        });
+
+        $router->post('/platform/settings/smtp/save', function (Request $request, UserContext $userContext): Response {
+            return (new PlatformController())->platformSmtpSave($request, $userContext);
+        });
+
+        $router->post('/platform/settings/smtp/test', function (Request $request, UserContext $userContext): Response {
+            return (new PlatformController())->platformSmtpTest($request, $userContext);
+        });
+
+        $router->post('/platform/demo-requests/update', function (Request $request, UserContext $userContext): Response {
+            return (new PlatformController())->demoRequestUpdate($request, $userContext);
         });
 
         $router->get('/platform/companies/new', function (Request $request, UserContext $userContext): Response {

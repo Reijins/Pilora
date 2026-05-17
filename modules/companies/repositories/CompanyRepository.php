@@ -13,7 +13,7 @@ final class CompanyRepository
         $pdo = Connection::pdo();
         $stmt = $pdo->prepare('
             SELECT id, name, workHoursPerDay, companyKind, billingEmail, status, billingPlan, billingStatus, billingCycle, maxSeats,
-                   subscriptionRenewsAt, externalBillingRef
+                   subscriptionStartedAt, subscriptionRenewsAt, externalBillingRef, createdAt
             FROM Company
             WHERE id = :id
             LIMIT 1
@@ -31,7 +31,7 @@ final class CompanyRepository
         $pdo = Connection::pdo();
         $stmt = $pdo->prepare('
             SELECT id, name, workHoursPerDay, companyKind, billingEmail, status, billingPlan, billingStatus, billingCycle, maxSeats,
-                   subscriptionRenewsAt, externalBillingRef
+                   subscriptionStartedAt, subscriptionRenewsAt, externalBillingRef, createdAt
             FROM Company
             ORDER BY id ASC
             LIMIT :limit
@@ -51,7 +51,7 @@ final class CompanyRepository
         $pdo = Connection::pdo();
         $stmt = $pdo->prepare('
             SELECT id, name, workHoursPerDay, companyKind, billingEmail, status, billingPlan, billingStatus, billingCycle, maxSeats,
-                   subscriptionRenewsAt, externalBillingRef
+                   subscriptionStartedAt, subscriptionRenewsAt, externalBillingRef, createdAt
             FROM Company
             WHERE companyKind = :tenant
             ORDER BY id ASC
@@ -232,6 +232,7 @@ final class CompanyRepository
      *   billingStatus:?string,
      *   billingCycle:?string,
      *   maxSeats:?int,
+     *   subscriptionStartedAt:?string,
      *   subscriptionRenewsAt:?string,
      *   externalBillingRef:?string
      * } $data
@@ -255,6 +256,10 @@ final class CompanyRepository
         if (array_key_exists('maxSeats', $data)) {
             $fields[] = 'maxSeats = :maxSeats';
             $params['maxSeats'] = $data['maxSeats'];
+        }
+        if (array_key_exists('subscriptionStartedAt', $data)) {
+            $fields[] = 'subscriptionStartedAt = :subscriptionStartedAt';
+            $params['subscriptionStartedAt'] = $data['subscriptionStartedAt'] !== null && $data['subscriptionStartedAt'] !== '' ? $data['subscriptionStartedAt'] : null;
         }
         if (array_key_exists('subscriptionRenewsAt', $data)) {
             $fields[] = 'subscriptionRenewsAt = :subscriptionRenewsAt';

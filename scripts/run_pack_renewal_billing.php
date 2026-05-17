@@ -4,7 +4,7 @@ declare(strict_types=1);
 use Core\Autoloader;
 use Modules\Companies\Repositories\CompanyRepository;
 use Modules\Platform\Repositories\PackRepository;
-use Modules\Quotes\Services\QuoteDeliveryService;
+use Modules\Platform\Services\PlatformMailService;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 require dirname(__DIR__) . '/core/Autoloader.php';
@@ -13,7 +13,7 @@ require dirname(__DIR__) . '/core/Autoloader.php';
 
 $packRepo = new PackRepository();
 $companyRepo = new CompanyRepository();
-$mailer = new QuoteDeliveryService();
+$mailer = new PlatformMailService();
 
 $today = new DateTimeImmutable('today');
 $packs = $packRepo->listAll();
@@ -69,11 +69,12 @@ foreach ($companies as $c) {
 
     if ($billingEmail !== '' && filter_var($billingEmail, FILTER_VALIDATE_EMAIL)) {
         try {
-            $mailer->sendTestEmail(
-                companyId: $companyId,
-                toEmail: $billingEmail,
-                subject: 'Facture de renouvellement - ' . $companyPack,
-                bodyText: "Votre abonnement {$companyPack} ({$cycle}) a été renouvelé.\nMontant: " . number_format($price, 2, ',', ' ') . " EUR.\nProchaine échéance: " . $nextDate->format('Y-m-d') . "."
+            $mailer->sendBillingRenewal(
+                $billingEmail,
+                $companyPack,
+                $cycle,
+                number_format($price, 2, ',', ' '),
+                $nextDate->format('d/m/Y')
             );
             $sent++;
         } catch (Throwable) {

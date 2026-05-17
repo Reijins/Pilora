@@ -11,9 +11,13 @@ use Core\Http\Response;
 use Core\Security\Csrf;
 use Modules\Companies\Repositories\CompanyRepository;
 use Modules\Platform\Repositories\AuditLogRepository;
+use Core\Config;
 use Modules\Platform\Repositories\PlatformBillingSettingsRepository;
 use Modules\Platform\Repositories\PlatformInvoiceRepository;
+use Modules\Platform\Repositories\PlatformSmtpSettingsRepository;
 use Modules\Platform\Repositories\PackRepository;
+use Modules\Marketing\Repositories\DemoRequestRepository;
+use Modules\Platform\Services\PlatformMailService;
 use Modules\Rbac\Services\TenantRbacBootstrapService;
 use Modules\Users\Repositories\UserAdminRepository;
 
@@ -32,14 +36,16 @@ final class PlatformController extends BaseController
         }
 
         $tabRaw = (string) $request->getQueryParam('tab', 'companies');
-        $tab = in_array($tabRaw, ['companies', 'packs', 'audit', 'invoices', 'users', 'settings'], true) ? $tabRaw : 'companies';
+        $tab = in_array($tabRaw, ['companies', 'packs', 'audit', 'invoices', 'users', 'demos', 'settings'], true) ? $tabRaw : 'companies';
 
         $companies = [];
         $packs = [];
         $auditRows = [];
         $invoiceTracking = [];
+        $demoRequests = [];
         $platformUsers = [];
         $platformBillingSettings = [];
+        $platformSmtpSettings = [];
         try {
             $companies = (new CompanyRepository())->listTenantCompanies(500);
         } catch (\Throwable) {
@@ -68,11 +74,23 @@ final class PlatformController extends BaseController
             } catch (\Throwable) {
             }
         }
+        if ($tab === 'demos') {
+            try {
+                $demoRequests = (new DemoRequestRepository())->listRecent(250);
+            } catch (\Throwable) {
+            }
+        }
+        $platformSettingsSub = 'legal';
         if ($tab === 'settings') {
             try {
                 $platformBillingSettings = (new PlatformBillingSettingsRepository())->get();
+                $platformSmtpSettings = (new PlatformSmtpSettingsRepository())->get();
             } catch (\Throwable) {
             }
+            $subRaw = (string) $request->getQueryParam('sub', 'legal');
+            $platformSettingsSub = in_array($subRaw, ['legal', 'smtp', 'email-billing', 'email-welcome', 'email-demo'], true)
+                ? $subRaw
+                : 'legal';
         }
 
         return $this->renderPage('platform/companies_index.php', [
@@ -82,8 +100,11 @@ final class PlatformController extends BaseController
             'packs' => $packs,
             'auditRows' => $auditRows,
             'invoiceTracking' => $invoiceTracking,
+            'demoRequests' => $demoRequests,
             'platformUsers' => $platformUsers,
             'platformBillingSettings' => $platformBillingSettings,
+            'platformSmtpSettings' => $platformSmtpSettings,
+            'platformSettingsSub' => $platformSettingsSub,
             'csrfToken' => Csrf::token(),
             'canAudit' => $this->can($userContext, 'platform.audit.read'),
             'canBilling' => $this->can($userContext, 'platform.billing.manage'),
@@ -100,10 +121,11 @@ final class PlatformController extends BaseController
             return Response::redirect('dashboard');
         }
         if (!Csrf::verify($request->getBodyParam('csrf_token', null))) {
-            return Response::redirect('platform/companies?tab=settings&err=CSRF%20invalide');
+            return Response::redirect($this->platformSettingsUrl('legal', 'err=CSRF%20invalide'));
         }
         $existing = (new PlatformBillingSettingsRepository())->get();
         $stripeInput = trim((string) $request->getBodyParam('stripe_secret_key', ''));
+        $webhookInput = trim((string) $request->getBodyParam('stripe_webhook_secret', ''));
         $data = [
             'legal_name' => trim((string) $request->getBodyParam('legal_name', '')),
             'address' => trim((string) $request->getBodyParam('address', '')),
@@ -113,15 +135,144 @@ final class PlatformController extends BaseController
             'email' => trim((string) $request->getBodyParam('email', '')),
             'website' => trim((string) $request->getBodyParam('website', '')),
             'stripe_secret_key' => $stripeInput !== '' ? $stripeInput : (string) ($existing['stripe_secret_key'] ?? ''),
+            'stripe_webhook_secret' => $webhookInput !== '' ? $webhookInput : (string) ($existing['stripe_webhook_secret'] ?? ''),
         ];
         try {
             (new PlatformBillingSettingsRepository())->save($data);
         } catch (\Throwable) {
-            return Response::redirect('platform/companies?tab=settings&err=Enregistrement%20impossible');
+            return Response::redirect($this->platformSettingsUrl('legal', 'err=Enregistrement%20impossible'));
         }
         Csrf::rotate();
 
-        return Response::redirect('platform/companies?tab=settings&msg=Param%C3%A8tres%20enregistr%C3%A9s');
+        return Response::redirect($this->platformSettingsUrl('legal', 'msg=Param%C3%A8tres%20enregistr%C3%A9s'));
+    }
+
+    public function platformSmtpSave(Request $request, UserContext $userContext): Response
+    {
+        if (!$this->assertPlatform($userContext) || !$this->can($userContext, 'platform.billing.manage')) {
+            return Response::redirect('dashboard');
+        }
+        if (!Csrf::verify($request->getBodyParam('csrf_token', null))) {
+            return Response::redirect($this->platformSettingsUrl('smtp', 'err=CSRF%20invalide'));
+        }
+
+        $sub = trim((string) $request->getBodyParam('settings_sub', 'smtp'));
+        if (!in_array($sub, ['smtp', 'email-billing', 'email-welcome', 'email-demo'], true)) {
+            $sub = 'smtp';
+        }
+
+        $existing = (new PlatformSmtpSettingsRepository())->get();
+        $data = $existing;
+
+        if ($sub === 'smtp') {
+            $host = trim((string) $request->getBodyParam('smtp_host', ''));
+            $portRaw = $request->getBodyParam('smtp_port', '587');
+            $port = is_numeric($portRaw) ? (int) $portRaw : 587;
+            if ($host === '' || $port <= 0) {
+                return Response::redirect($this->platformSettingsUrl('smtp', 'err=SMTP%20invalide'));
+            }
+            $fromEmail = trim((string) $request->getBodyParam('smtp_from_email', ''));
+            if ($fromEmail !== '' && filter_var($fromEmail, FILTER_VALIDATE_EMAIL) === false) {
+                return Response::redirect($this->platformSettingsUrl('smtp', 'err=Email%20expediteur%20invalide'));
+            }
+            $encryption = trim((string) $request->getBodyParam('smtp_encryption', 'tls'));
+            if (!in_array($encryption, ['none', 'ssl', 'tls'], true)) {
+                $encryption = 'tls';
+            }
+            $password = trim((string) $request->getBodyParam('smtp_password', ''));
+            if ($password === '') {
+                $password = (string) ($existing['password'] ?? '');
+            }
+            $data['host'] = $host;
+            $data['port'] = $port;
+            $data['auth_enabled'] = (string) $request->getBodyParam('smtp_auth_enabled', '1') === '0' ? '0' : '1';
+            $data['username'] = trim((string) $request->getBodyParam('smtp_username', ''));
+            $data['password'] = $password;
+            $data['encryption'] = $encryption;
+            $data['from_email'] = $fromEmail;
+            $data['from_name'] = trim((string) $request->getBodyParam('smtp_from_name', 'Pilora'));
+        } elseif ($sub === 'email-billing') {
+            $data['billing_email_subject'] = trim((string) $request->getBodyParam('billing_email_subject', ''));
+            $data['billing_email_body'] = trim((string) $request->getBodyParam('billing_email_body', ''));
+        } elseif ($sub === 'email-demo') {
+            $data['demo_notify_email'] = trim((string) $request->getBodyParam('demo_notify_email', ''));
+            $data['demo_notify_subject'] = trim((string) $request->getBodyParam('demo_notify_subject', ''));
+            $data['demo_notify_body'] = trim((string) $request->getBodyParam('demo_notify_body', ''));
+            $data['demo_ack_subject'] = trim((string) $request->getBodyParam('demo_ack_subject', ''));
+            $data['demo_ack_body'] = trim((string) $request->getBodyParam('demo_ack_body', ''));
+        } else {
+            $data['company_welcome_subject'] = trim((string) $request->getBodyParam('company_welcome_subject', ''));
+            $data['company_welcome_body'] = trim((string) $request->getBodyParam('company_welcome_body', ''));
+        }
+
+        try {
+            (new PlatformSmtpSettingsRepository())->save($data);
+        } catch (\Throwable) {
+            return Response::redirect($this->platformSettingsUrl($sub, 'err=Enregistrement%20impossible'));
+        }
+        Csrf::rotate();
+
+        $msg = $sub === 'smtp' ? 'SMTP%20enregistr%C3%A9' : 'Mod%C3%A8le%20enregistr%C3%A9';
+
+        return Response::redirect($this->platformSettingsUrl($sub, 'msg=' . $msg));
+    }
+
+    public function platformSmtpTest(Request $request, UserContext $userContext): Response
+    {
+        if (!$this->assertPlatform($userContext) || !$this->can($userContext, 'platform.billing.manage')) {
+            return Response::redirect('dashboard');
+        }
+        if (!Csrf::verify($request->getBodyParam('csrf_token', null))) {
+            return Response::redirect($this->platformSettingsUrl('smtp', 'err=CSRF%20invalide'));
+        }
+        $toEmail = trim((string) $request->getBodyParam('smtp_test_email', ''));
+        if ($toEmail === '' || filter_var($toEmail, FILTER_VALIDATE_EMAIL) === false) {
+            return Response::redirect($this->platformSettingsUrl('smtp', 'err=Email%20de%20test%20invalide'));
+        }
+        try {
+            (new PlatformMailService())->send(
+                $toEmail,
+                'Test SMTP Pilora (plateforme)',
+                "Bonjour,\n\nCe message confirme que le SMTP plateforme Pilora est opérationnel."
+            );
+        } catch (\Throwable $e) {
+            $msg = trim($e->getMessage());
+            $suffix = $msg !== '' ? ('&err=Test%20SMTP%20echoue%20-%20' . rawurlencode($msg)) : '&err=Test%20SMTP%20echoue';
+
+            return Response::redirect($this->platformSettingsUrl('smtp', ltrim($suffix, '&')));
+        }
+        Csrf::rotate();
+
+        return Response::redirect($this->platformSettingsUrl('smtp', 'msg=Test%20SMTP%20envoye'));
+    }
+
+    public function demoRequestUpdate(Request $request, UserContext $userContext): Response
+    {
+        if (!$this->assertPlatform($userContext) || !$this->can($userContext, 'platform.company.manage')) {
+            return Response::redirect('dashboard');
+        }
+        if (!Csrf::verify($request->getBodyParam('csrf_token', null))) {
+            return Response::redirect('platform/companies?tab=demos&err=CSRF%20invalide');
+        }
+        $id = (int) $request->getBodyParam('id', 0);
+        $status = trim((string) $request->getBodyParam('status', ''));
+        $notes = trim((string) $request->getBodyParam('notes', ''));
+        if ($id <= 0 || !(new DemoRequestRepository())->updateStatus($id, $status, $notes)) {
+            return Response::redirect('platform/companies?tab=demos&err=Mise%20a%20jour%20impossible');
+        }
+        Csrf::rotate();
+
+        return Response::redirect('platform/companies?tab=demos&msg=Demande%20mise%20a%20jour');
+    }
+
+    private function platformSettingsUrl(string $sub, string $query = ''): string
+    {
+        $url = 'platform/companies?tab=settings&sub=' . rawurlencode($sub);
+        if ($query !== '') {
+            $url .= '&' . ltrim($query, '&');
+        }
+
+        return $url;
     }
 
     public function companyNew(Request $request, UserContext $userContext): Response
@@ -205,17 +356,23 @@ final class PlatformController extends BaseController
             $packName = trim((string) ($selectedPack['name'] ?? ''));
             $packPrice = (float) ($selectedPack['price'] ?? 0);
             $packSeats = max(0, (int) ($selectedPack['maxUsers'] ?? 0));
+            $startDate = (new \DateTimeImmutable('today'))->format('Y-m-d');
             $renewDate = null;
+            $billingCycle = null;
             $billingStatus = 'active';
             if ($packPrice <= 0) {
                 $billingStatus = 'trial';
                 $renewDate = (new \DateTimeImmutable('today'))->modify('+7 days')->format('Y-m-d');
+            } else {
+                $billingCycle = 'monthly';
+                $renewDate = (new \DateTimeImmutable('today'))->modify('+1 month')->format('Y-m-d');
             }
             $repo->updateBilling($newId, [
                 'billingPlan' => $packName,
                 'billingStatus' => $billingStatus,
-                'billingCycle' => null,
+                'billingCycle' => $billingCycle,
                 'maxSeats' => $packSeats,
+                'subscriptionStartedAt' => $startDate,
                 'subscriptionRenewsAt' => $renewDate,
                 'externalBillingRef' => null,
             ]);
@@ -236,6 +393,23 @@ final class PlatformController extends BaseController
                 // Utilisateur principal : tous les rôles tenant (accès complet métier + profils cumulés).
                 $rbacBootstrap->assignUserAllTenantRoles($newId, $newUserId);
             }
+
+            $welcomeEmail = $initialUserEmail !== '' ? $initialUserEmail : $billingEmail;
+            if ($welcomeEmail !== '' && filter_var($welcomeEmail, FILTER_VALIDATE_EMAIL)) {
+                try {
+                    $appUrl = rtrim((string) (Config::env('APP_URL', '') ?? ''), '/');
+                    $loginUrl = $appUrl !== '' ? $appUrl . '/login' : '/login';
+                    (new PlatformMailService())->sendCompanyWelcome(
+                        $welcomeEmail,
+                        $name,
+                        $welcomeEmail,
+                        $loginUrl
+                    );
+                } catch (\Throwable) {
+                    // La création société ne doit pas échouer si l’email est indisponible.
+                }
+            }
+
             $this->audit($homeId, $actorId, 'platform.company.create', $newId, ['name' => $name]);
         } catch (\Throwable) {
             $packs = [];

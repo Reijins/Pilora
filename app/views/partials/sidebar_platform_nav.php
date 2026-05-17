@@ -8,6 +8,7 @@ $canAudit = in_array('platform.audit.read', $perms, true);
 <div class="nav-section nav-section--platform">
     <div class="nav-section-label">Plateforme</div>
     <a class="nav-link nav-link-platform" href="<?= htmlspecialchars($basePath . '/platform/companies?tab=companies', ENT_QUOTES, 'UTF-8') ?>">Sociétés</a>
+    <a class="nav-link nav-link-platform" href="<?= htmlspecialchars($basePath . '/platform/companies?tab=demos', ENT_QUOTES, 'UTF-8') ?>">Demandes démo</a>
     <?php if ($canBilling): ?>
         <a class="nav-link nav-link-platform" href="<?= htmlspecialchars($basePath . '/platform/companies?tab=packs', ENT_QUOTES, 'UTF-8') ?>">Packs</a>
     <?php endif; ?>
