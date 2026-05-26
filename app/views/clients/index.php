@@ -30,19 +30,33 @@ declare(strict_types=1);
                     <table class="table">
                         <thead>
                             <tr>
+                                <th>N°</th>
                                 <th>Nom</th>
                                 <th>Téléphone</th>
                                 <th>Email</th>
+                                <th>Statut</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (!empty($clients)): ?>
                                 <?php foreach ($clients as $client): ?>
+                                    <?php
+                                        $phone = $client['contactPhone'] ?? $client['phone'] ?? '';
+                                        $email = $client['contactEmail'] ?? $client['email'] ?? '';
+                                    ?>
                                     <tr>
+                                        <td><code><?= htmlspecialchars($client['clientNumber'] ?? '', ENT_QUOTES, 'UTF-8') ?></code></td>
                                         <td><?= htmlspecialchars($client['name'] ?? '', ENT_QUOTES, 'UTF-8') ?></td>
-                                        <td><?= htmlspecialchars((string) ($client['phone'] ?? '—'), ENT_QUOTES, 'UTF-8') ?></td>
-                                        <td><?= htmlspecialchars((string) ($client['email'] ?? '—'), ENT_QUOTES, 'UTF-8') ?></td>
+                                        <td><?= htmlspecialchars($phone !== '' ? $phone : '—', ENT_QUOTES, 'UTF-8') ?></td>
+                                        <td><?= htmlspecialchars($email !== '' ? $email : '—', ENT_QUOTES, 'UTF-8') ?></td>
+                                        <td>
+                                            <?php if (empty($client['isBillable']) || (int) $client['isBillable'] === 0): ?>
+                                                <span class="badge badge-warning">Non facturable</span>
+                                            <?php else: ?>
+                                                <span class="badge badge-success">Actif</span>
+                                            <?php endif; ?>
+                                        </td>
                                         <td>
                                             <div style="display:flex; flex-wrap:wrap; gap:12px;">
                                                 <a class="link-action" href="<?= htmlspecialchars($basePath . '/clients/show?clientId=' . (int) $client['id'], ENT_QUOTES, 'UTF-8') ?>">Ouvrir fiche</a>
@@ -52,7 +66,7 @@ declare(strict_types=1);
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="4" class="muted">Aucun client trouvé.</td>
+                                    <td colspan="6" class="muted">Aucun client trouvé.</td>
                                 </tr>
                             <?php endif; ?>
                         </tbody>

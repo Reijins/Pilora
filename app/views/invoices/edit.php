@@ -154,7 +154,7 @@ $dueYmd = strlen($dueRaw) >= 10 ? substr($dueRaw, 0, 10) : $dueRaw;
 
             <?php if (!empty($canDeleteManualDraft)): ?>
                 <div class="affair-actions" style="margin-top:12px; padding-top:16px; border-top:1px solid var(--border, #e2e8f0);">
-                    <form method="POST" action="<?= htmlspecialchars($basePath . '/invoices/delete-manual-draft', ENT_QUOTES, 'UTF-8') ?>" style="display:inline;" onsubmit="return confirm('Supprimer définitivement ce brouillon (facture manuelle sans devis) ?');">
+                    <form method="POST" action="<?= htmlspecialchars($basePath . '/invoices/delete-manual-draft', ENT_QUOTES, 'UTF-8') ?>" style="display:inline;" data-confirm="Supprimer définitivement ce brouillon (facture manuelle sans devis) ?" data-confirm-title="Supprimer le brouillon" data-confirm-variant="danger" data-confirm-btn="Supprimer">
                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) ($csrfToken ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                         <input type="hidden" name="invoice_id" value="<?= $invoiceId ?>">
                         <input type="hidden" name="project_id" value="<?= (int) ($projectId ?? 0) ?>">

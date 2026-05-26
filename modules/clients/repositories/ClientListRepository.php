@@ -18,7 +18,7 @@ final class ClientListRepository
         $stmt = $pdo->prepare('
             SELECT id, name
             FROM Client
-            WHERE companyId = :companyId
+            WHERE companyId = :companyId AND status = "active"
             ORDER BY id DESC
             LIMIT :limit
         ');

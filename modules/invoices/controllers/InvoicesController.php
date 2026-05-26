@@ -861,11 +861,30 @@ final class InvoicesController extends BaseController
                 $quote = ['title' => '', 'quoteNumber' => '', 'id' => 0];
             }
             $project = (new ProjectRepository())->findByCompanyIdAndId($userContext->companyId, $projectId);
-            $client = (new ClientRepository())->findByCompanyIdAndId($userContext->companyId, (int) ($invoice['clientId'] ?? 0));
+            $clientId = (int) ($invoice['clientId'] ?? 0);
+            $client = (new ClientRepository())->findByCompanyIdAndId($userContext->companyId, $clientId);
             if (!is_array($project) || !is_array($client)) {
                 return Response::redirect('projects/show?projectId=' . $projectId . '&err=Donn%C3%A9es%20de%20facture%20incompl%C3%A8tes');
             }
-            $toEmail = trim((string) ($client['email'] ?? ''));
+            $contacts = (new ContactRepository())->listByCompanyIdAndClientId($userContext->companyId, $clientId);
+            $toEmail = '';
+            foreach ($contacts as $_c) {
+                if (!empty($_c['isPrimaryContact']) && trim((string) ($_c['email'] ?? '')) !== '') {
+                    $toEmail = trim((string) $_c['email']);
+                    break;
+                }
+            }
+            if ($toEmail === '') {
+                foreach ($contacts as $_c) {
+                    if (trim((string) ($_c['email'] ?? '')) !== '') {
+                        $toEmail = trim((string) $_c['email']);
+                        break;
+                    }
+                }
+            }
+            if ($toEmail === '') {
+                $toEmail = trim((string) ($client['email'] ?? ''));
+            }
             if ($toEmail === '' || filter_var($toEmail, FILTER_VALIDATE_EMAIL) === false) {
                 return Response::redirect('projects/show?projectId=' . $projectId . '&err=Email%20client%20invalide');
             }
@@ -879,10 +898,6 @@ final class InvoicesController extends BaseController
             $companyIdentity = (new CompanyRepository())->getDocumentIdentity($userContext->companyId, $smtp);
             $companyName = (string) $companyIdentity['name'];
             $totals = InvoiceAmountsService::displayTotalsForInvoice($userContext->companyId, $invoice);
-            $contacts = (new ContactRepository())->listByCompanyIdAndClientId(
-                $userContext->companyId,
-                (int) ($invoice['clientId'] ?? 0)
-            );
             $viewsRoot = dirname(__DIR__, 3) . '/app/views';
             $pdfHtml = View::render($viewsRoot . '/invoices/pdf.php', [
                 'invoice' => $invoice,
@@ -995,11 +1010,30 @@ final class InvoicesController extends BaseController
                 $quote = ['title' => '', 'quoteNumber' => '', 'id' => 0];
             }
             $project = (new ProjectRepository())->findByCompanyIdAndId($userContext->companyId, $projectId);
-            $client = (new ClientRepository())->findByCompanyIdAndId($userContext->companyId, (int) ($invoice['clientId'] ?? 0));
+            $clientId = (int) ($invoice['clientId'] ?? 0);
+            $client = (new ClientRepository())->findByCompanyIdAndId($userContext->companyId, $clientId);
             if (!is_array($project) || !is_array($client)) {
                 return Response::redirect('projects/show?projectId=' . $projectId . '&err=Donn%C3%A9es%20de%20facture%20incompl%C3%A8tes');
             }
-            $toEmail = trim((string) ($client['email'] ?? ''));
+            $contacts = (new ContactRepository())->listByCompanyIdAndClientId($userContext->companyId, $clientId);
+            $toEmail = '';
+            foreach ($contacts as $_c) {
+                if (!empty($_c['isPrimaryContact']) && trim((string) ($_c['email'] ?? '')) !== '') {
+                    $toEmail = trim((string) $_c['email']);
+                    break;
+                }
+            }
+            if ($toEmail === '') {
+                foreach ($contacts as $_c) {
+                    if (trim((string) ($_c['email'] ?? '')) !== '') {
+                        $toEmail = trim((string) $_c['email']);
+                        break;
+                    }
+                }
+            }
+            if ($toEmail === '') {
+                $toEmail = trim((string) ($client['email'] ?? ''));
+            }
             if ($toEmail === '' || filter_var($toEmail, FILTER_VALIDATE_EMAIL) === false) {
                 return Response::redirect('projects/show?projectId=' . $projectId . '&err=Email%20client%20invalide');
             }
@@ -1013,10 +1047,6 @@ final class InvoicesController extends BaseController
             $companyIdentity = (new CompanyRepository())->getDocumentIdentity($userContext->companyId, $smtp);
             $companyName = (string) $companyIdentity['name'];
             $totals = InvoiceAmountsService::displayTotalsForInvoice($userContext->companyId, $invoice);
-            $contacts = (new ContactRepository())->listByCompanyIdAndClientId(
-                $userContext->companyId,
-                (int) ($invoice['clientId'] ?? 0)
-            );
             $viewsRoot = dirname(__DIR__, 3) . '/app/views';
             $pdfHtml = View::render($viewsRoot . '/invoices/pdf.php', [
                 'invoice' => $invoice,

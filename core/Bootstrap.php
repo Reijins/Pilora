@@ -177,6 +177,18 @@ final class Bootstrap
             return (new ClientsController())->update($request, $userContext);
         });
 
+        $router->post('/clients/delete', function (Request $request, UserContext $userContext): Response {
+            return (new ClientsController())->delete($request, $userContext);
+        });
+
+        $router->post('/clients/toggle-billable', function (Request $request, UserContext $userContext): Response {
+            return (new ClientsController())->toggleBillable($request, $userContext);
+        });
+
+        $router->post('/contacts/set-primary', function (Request $request, UserContext $userContext): Response {
+            return (new ContactsController())->setPrimary($request, $userContext);
+        });
+
         $router->get('/contacts', function (Request $request, UserContext $userContext): Response {
             return (new ContactsController())->index($request, $userContext);
         });
@@ -347,6 +359,10 @@ final class Bootstrap
 
         $router->get('/quotes/signed/download', function (Request $request, UserContext $userContext): Response {
             return (new ProjectsController())->downloadSignedQuotePdf($request, $userContext);
+        });
+
+        $router->get('/projects/quotes/pdf', function (Request $request, UserContext $userContext): Response {
+            return (new ProjectsController())->downloadQuotePdf($request, $userContext);
         });
 
         $router->get('/invoice/pay', function (Request $request, UserContext $userContext): Response {

@@ -53,6 +53,7 @@ declare(strict_types=1);
         </main>
     </div>
 </div>
+<script src="<?= htmlspecialchars(($basePath !== '' ? $basePath : '') . '/public/js/confirm-modal.js', ENT_QUOTES, 'UTF-8') ?>"></script>
 </body>
 </html>
 

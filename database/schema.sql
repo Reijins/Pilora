@@ -156,6 +156,7 @@ CREATE TABLE IF NOT EXISTS UserSession (
 CREATE TABLE IF NOT EXISTS Client (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   companyId BIGINT UNSIGNED NOT NULL,
+  clientNumber VARCHAR(10) NULL,
   name VARCHAR(255) NOT NULL,
   phone VARCHAR(50) NULL,
   email VARCHAR(255) NULL,
@@ -163,12 +164,16 @@ CREATE TABLE IF NOT EXISTS Client (
   address VARCHAR(255) NULL,
   siret VARCHAR(32) NULL,
   accountingCustomerAccount VARCHAR(32) NULL,
+  status ENUM('active','deleted') NOT NULL DEFAULT 'active',
+  isBillable TINYINT UNSIGNED NOT NULL DEFAULT 1,
   notes TEXT NULL,
   createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_client_companyId (companyId),
+  UNIQUE KEY idx_client_number (companyId, clientNumber),
   KEY idx_client_name (companyId, name),
+  KEY idx_client_status (companyId, status),
   CONSTRAINT fk_client_company
     FOREIGN KEY (companyId) REFERENCES Company (id)
     ON DELETE RESTRICT ON UPDATE CASCADE
@@ -184,11 +189,13 @@ CREATE TABLE IF NOT EXISTS Contact (
   email VARCHAR(255) NULL,
   phone VARCHAR(50) NULL,
   notes TEXT NULL,
+  isPrimaryContact TINYINT UNSIGNED NOT NULL DEFAULT 0,
   createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_contact_companyId (companyId),
   KEY idx_contact_clientId (companyId, clientId),
+  KEY idx_contact_primary (companyId, clientId, isPrimaryContact),
   CONSTRAINT fk_contact_company
     FOREIGN KEY (companyId) REFERENCES Company (id)
     ON DELETE RESTRICT ON UPDATE CASCADE,
@@ -357,6 +364,7 @@ CREATE TABLE IF NOT EXISTS Payment (
 CREATE TABLE IF NOT EXISTS Project (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   companyId BIGINT UNSIGNED NOT NULL,
+  projectNumber VARCHAR(15) NULL,
   clientId BIGINT UNSIGNED NOT NULL,
   name VARCHAR(255) NOT NULL,
   status ENUM('planned','in_progress','completed','paused') NOT NULL DEFAULT 'planned',
@@ -379,6 +387,7 @@ CREATE TABLE IF NOT EXISTS Project (
   updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_project_companyId (companyId),
+  UNIQUE KEY idx_project_number (companyId, projectNumber),
   KEY idx_project_clientId (companyId, clientId),
   KEY idx_project_status (companyId, status),
   CONSTRAINT fk_project_company

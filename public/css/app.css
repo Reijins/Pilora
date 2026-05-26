@@ -1484,6 +1484,60 @@ input.input[type="radio"]{
     padding-top:4px;
 }
 
+/* Autocomplete dropdown prestations */
+.affair-autocomplete-dropdown--global{
+    display:none;
+    position:fixed;
+    z-index:9999;
+    max-height:280px;
+    overflow-y:auto;
+    background:var(--card-bg, #fff);
+    border:1px solid var(--border, #e2e8f0);
+    border-radius:0 0 10px 10px;
+    box-shadow:0 12px 32px rgba(15,23,42,.18);
+}
+.affair-autocomplete-dropdown--global.is-visible{
+    display:block;
+    animation:dropdownSlide .15s ease-out;
+}
+@keyframes dropdownSlide{
+    from{opacity:0;transform:translateY(-4px)}
+    to{opacity:1;transform:translateY(0)}
+}
+.affair-autocomplete-item{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:9px 12px;
+    cursor:pointer;
+    gap:8px;
+    transition:background .1s;
+}
+.affair-autocomplete-item:hover{
+    background:var(--surface-muted);
+}
+.affair-autocomplete-item__name{
+    font-size:13px;
+    font-weight:500;
+    color:var(--main-text);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+.affair-autocomplete-item__price{
+    font-size:12px;
+    font-weight:600;
+    color:var(--primary);
+    white-space:nowrap;
+    flex-shrink:0;
+}
+.affair-autocomplete-empty{
+    padding:12px;
+    font-size:13px;
+    color:var(--secondary-text);
+    text-align:center;
+}
+
 /* Bloc devis/prestations - fiche affaire */
 .quote-block{
     display:flex;
@@ -1815,5 +1869,223 @@ input.input[type="radio"]{
 }
 @media (max-width: 640px){
     .company-create-grid{grid-template-columns:1fr;}
+}
+
+/* ========== Confirm Modal ========== */
+.confirm-modal-overlay{
+    position:fixed;
+    inset:0;
+    display:none;
+    background:rgba(15,23,42,.55);
+    backdrop-filter:blur(8px);
+    -webkit-backdrop-filter:blur(8px);
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+    z-index:1100;
+    animation:confirmOverlayIn .18s ease-out;
+}
+.confirm-modal-overlay.is-visible{
+    display:flex;
+}
+@keyframes confirmOverlayIn{
+    from{opacity:0}
+    to{opacity:1}
+}
+.confirm-modal{
+    width:100%;
+    max-width:440px;
+    background:var(--card-bg);
+    border:1px solid var(--border);
+    border-radius:var(--radius-xl);
+    box-shadow:0 24px 64px rgba(15,23,42,.22);
+    animation:confirmSlideUp .22s ease-out;
+    overflow:hidden;
+}
+@keyframes confirmSlideUp{
+    from{opacity:0;transform:translateY(16px) scale(.97)}
+    to{opacity:1;transform:translateY(0) scale(1)}
+}
+.confirm-modal-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    padding:18px 22px 0;
+}
+.confirm-modal-title{
+    margin:0;
+    font-size:17px;
+    font-weight:700;
+    color:var(--main-text);
+}
+.confirm-modal-close{
+    width:32px;
+    height:32px;
+    min-height:32px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background:transparent;
+    cursor:pointer;
+    font-size:18px;
+    color:var(--secondary-text);
+    transition:background .15s,color .15s;
+}
+.confirm-modal-close:hover{
+    background:var(--surface-muted);
+    color:var(--main-text);
+}
+.confirm-modal-body{
+    padding:14px 22px 6px;
+    color:var(--secondary-text);
+    font-size:14px;
+    line-height:1.6;
+}
+.confirm-modal-actions{
+    display:flex;
+    align-items:center;
+    justify-content:flex-end;
+    gap:10px;
+    padding:14px 22px 20px;
+}
+.confirm-modal-actions .btn{
+    min-height:38px;
+    font-size:14px;
+}
+.confirm-modal--danger .confirm-modal-title{
+    color:var(--danger);
+}
+.confirm-modal--warning .confirm-modal-title{
+    color:var(--warning-text, #b45309);
+}
+
+/* ========== Sheet Header Actions ========== */
+.sheet-header-actions{
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:8px;
+}
+.sheet-number{
+    display:inline-block;
+    font-size:13px;
+    font-weight:600;
+    color:var(--primary);
+    background:var(--surface-muted);
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:2px 8px;
+    margin-right:8px;
+    font-family:var(--font-mono, monospace);
+    vertical-align:middle;
+}
+
+/* ========== Client Tabs ========== */
+.client-tabs{
+    display:flex;
+    align-items:center;
+    gap:0;
+    border-bottom:2px solid var(--border);
+    margin-bottom:0;
+}
+.client-tabs__btn{
+    position:relative;
+    padding:12px 20px;
+    font-size:14px;
+    font-weight:600;
+    color:var(--secondary-text);
+    background:transparent;
+    border:none;
+    border-bottom:2px solid transparent;
+    margin-bottom:-2px;
+    cursor:pointer;
+    transition:color .15s, border-color .15s;
+    border-radius:0;
+}
+.client-tabs__btn:hover{
+    color:var(--main-text);
+    background:var(--surface-muted);
+}
+.client-tabs__btn.is-active{
+    color:var(--primary);
+    border-bottom-color:var(--primary);
+}
+.client-tab-panel{
+    display:none;
+    padding-top:16px;
+}
+.client-tab-panel.is-active{
+    display:block;
+    animation:tabFadeIn .2s ease-out;
+}
+@keyframes tabFadeIn{
+    from{opacity:0;transform:translateY(6px)}
+    to{opacity:1;transform:translateY(0)}
+}
+.client-tab-panel__header{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:14px;
+    min-height:36px;
+}
+
+/* ========== Project Tabs (fiche affaire) ========== */
+.project-tabs{
+    display:flex;
+    align-items:center;
+    gap:0;
+    border-bottom:2px solid var(--border);
+    margin-bottom:0;
+}
+.project-tabs__btn{
+    position:relative;
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:12px 18px;
+    font-size:14px;
+    font-weight:600;
+    color:var(--secondary-text);
+    background:transparent;
+    border:none;
+    border-bottom:2px solid transparent;
+    margin-bottom:-2px;
+    cursor:pointer;
+    transition:color .15s, border-color .15s;
+    border-radius:0;
+}
+.project-tabs__btn:hover{
+    color:var(--main-text);
+    background:var(--surface-muted);
+}
+.project-tabs__btn.is-active{
+    color:var(--primary);
+    border-bottom-color:var(--primary);
+}
+.project-tab-check{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:18px;
+    height:18px;
+    border-radius:50%;
+    background:#16a34a;
+    color:#fff;
+    font-size:11px;
+    font-weight:700;
+    line-height:1;
+    flex-shrink:0;
+}
+.project-tab-panel{
+    display:none;
+    padding-top:16px;
+}
+.project-tab-panel.is-active{
+    display:block;
+    animation:tabFadeIn .2s ease-out;
 }
 

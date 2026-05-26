@@ -132,32 +132,56 @@ final class ClientsController extends BaseController
             return Response::redirect('clients');
         }
 
-        $name = trim((string) $request->getBodyParam('name', ''));
-        $phone = trim((string) $request->getBodyParam('phone', ''));
-        $email = trim((string) $request->getBodyParam('email', ''));
-        $address = trim((string) $request->getBodyParam('address', ''));
-        $notes = trim((string) $request->getBodyParam('notes', ''));
         $clientType = trim((string) $request->getBodyParam('client_type', 'entreprise'));
         if (!in_array($clientType, ['particulier', 'entreprise'], true)) {
             $clientType = 'entreprise';
         }
-        $siret = trim((string) $request->getBodyParam('siret', ''));
-        $firstName = trim((string) $request->getBodyParam('first_name', ''));
-        $createContactWithClient = (string) $request->getBodyParam('create_contact_with_client', '0') === '1';
+
+        $address = trim((string) $request->getBodyParam('address', ''));
+        $notes = trim((string) $request->getBodyParam('notes', ''));
         $accountingCustomerAccount = trim((string) $request->getBodyParam('accounting_customer_account', ''));
 
-        if ($name === '') {
-            return Response::redirect('clients?err=Nom%20obligatoire');
+        $siret = trim((string) $request->getBodyParam('siret', ''));
+        $firstName = trim((string) $request->getBodyParam('first_name', ''));
+        $lastNameParticulier = trim((string) $request->getBodyParam('last_name_particulier', ''));
+        $name = trim((string) $request->getBodyParam('name', ''));
+
+        $particulierPhone = trim((string) $request->getBodyParam('particulier_phone', ''));
+        $particulierEmail = trim((string) $request->getBodyParam('particulier_email', ''));
+
+        $contactFirstName = trim((string) $request->getBodyParam('contact_first_name', ''));
+        $contactLastName = trim((string) $request->getBodyParam('contact_last_name', ''));
+        $contactFunction = trim((string) $request->getBodyParam('contact_function', ''));
+        $contactPhone = trim((string) $request->getBodyParam('contact_phone', ''));
+        $contactEmail = trim((string) $request->getBodyParam('contact_email', ''));
+
+        if ($clientType === 'particulier') {
+            if ($lastNameParticulier === '') {
+                return Response::redirect('clients/new?err=Nom%20requis');
+            }
+            if ($firstName === '') {
+                return Response::redirect('clients/new?err=Prenom%20requis');
+            }
+            $name = mb_strtoupper($lastNameParticulier) . ' ' . ucfirst(mb_strtolower($firstName));
+        } else {
+            if ($name === '') {
+                return Response::redirect('clients?err=Nom%20obligatoire');
+            }
+            $name = mb_strtoupper($name);
         }
 
-        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
-            return Response::redirect('clients?err=Email%20invalide');
+        if ($clientType === 'particulier') {
+            if ($particulierEmail !== '' && filter_var($particulierEmail, FILTER_VALIDATE_EMAIL) === false) {
+                return Response::redirect('clients/new?err=Email%20invalide');
+            }
+        } else {
+            if ($contactEmail !== '' && filter_var($contactEmail, FILTER_VALIDATE_EMAIL) === false) {
+                return Response::redirect('clients/new?err=Email%20contact%20invalide');
+            }
         }
+
         if ($clientType === 'entreprise' && $siret !== '' && !preg_match('/^[0-9]{14}$/', $siret)) {
             return Response::redirect('clients/new?err=SIRET%20invalide%20%2814%20chiffres%29');
-        }
-        if ($clientType === 'particulier' && $firstName === '') {
-            return Response::redirect('clients/new?err=Prenom%20requis');
         }
 
         $notes = (string) ($this->buildNotesWithMeta(
@@ -165,31 +189,46 @@ final class ClientsController extends BaseController
             clientType: $clientType,
             siret: $clientType === 'entreprise' ? ($siret !== '' ? $siret : null) : null,
             firstName: $clientType === 'particulier' ? ($firstName !== '' ? $firstName : null) : null,
-            createContactWithClient: $clientType === 'particulier' && $createContactWithClient
+            createContactWithClient: true
         ) ?? '');
 
         $repo = new ClientRepository();
+        $contactRepo = new ContactRepository();
         try {
             $clientId = $repo->createClient(
                 companyId: $userContext->companyId,
                 name: $name,
-                phone: $phone !== '' ? $phone : null,
-                email: $email !== '' ? $email : null,
+                phone: null,
+                email: null,
                 address: $address !== '' ? $address : null,
                 notes: $notes !== '' ? $notes : null,
                 siret: $clientType === 'entreprise' && $siret !== '' ? $siret : null,
                 accountingCustomerAccount: $accountingCustomerAccount !== '' ? $accountingCustomerAccount : null,
             );
-            if ($clientType === 'particulier' && $createContactWithClient) {
-                (new ContactRepository())->create(
+
+            if ($clientType === 'particulier') {
+                $contactRepo->create(
                     companyId: $userContext->companyId,
                     clientId: $clientId,
-                    firstName: $firstName !== '' ? $firstName : null,
-                    lastName: $name !== '' ? $name : null,
-                    functionLabel: 'Particulier',
-                    email: $email !== '' ? $email : null,
-                    phone: $phone !== '' ? $phone : null,
-                    notes: null
+                    firstName: $firstName !== '' ? ucfirst(mb_strtolower($firstName)) : null,
+                    lastName: $lastNameParticulier !== '' ? mb_strtoupper($lastNameParticulier) : null,
+                    functionLabel: null,
+                    email: $particulierEmail !== '' ? $particulierEmail : null,
+                    phone: $particulierPhone !== '' ? $particulierPhone : null,
+                    notes: null,
+                    isPrimary: true
+                );
+            } else {
+                $contactRepo->create(
+                    companyId: $userContext->companyId,
+                    clientId: $clientId,
+                    firstName: $contactFirstName !== '' ? ucfirst(mb_strtolower($contactFirstName)) : null,
+                    lastName: $contactLastName !== '' ? mb_strtoupper($contactLastName) : null,
+                    functionLabel: $contactFunction !== '' ? $contactFunction : null,
+                    email: $contactEmail !== '' ? $contactEmail : null,
+                    phone: $contactPhone !== '' ? $contactPhone : null,
+                    notes: null,
+                    isPrimary: true
                 );
             }
         } catch (\Throwable) {
@@ -447,6 +486,54 @@ final class ClientsController extends BaseController
         }
         Csrf::rotate();
         return Response::redirect('clients/show?clientId=' . $clientId . '&msg=Client%20mis%20a%20jour');
+    }
+
+    public function delete(Request $request, UserContext $userContext): Response
+    {
+        if ($userContext->userId === null || $userContext->companyId === null) {
+            return Response::redirect('login');
+        }
+        if (!Csrf::verify((string) $request->getBodyParam('csrf_token', ''))) {
+            return Response::redirect('clients');
+        }
+        if (!in_array('client.create', $userContext->permissions, true)) {
+            return Response::redirect('clients');
+        }
+
+        $clientId = (int) $request->getBodyParam('client_id', 0);
+        if ($clientId <= 0) {
+            return Response::redirect('clients?err=Client%20invalide');
+        }
+
+        (new ClientRepository())->softDelete($userContext->companyId, $clientId);
+        Csrf::rotate();
+
+        return Response::redirect('clients?msg=Compte%20supprim%C3%A9');
+    }
+
+    public function toggleBillable(Request $request, UserContext $userContext): Response
+    {
+        if ($userContext->userId === null || $userContext->companyId === null) {
+            return Response::redirect('login');
+        }
+        if (!Csrf::verify((string) $request->getBodyParam('csrf_token', ''))) {
+            return Response::redirect('clients');
+        }
+        if (!in_array('client.create', $userContext->permissions, true)) {
+            return Response::redirect('clients');
+        }
+
+        $clientId = (int) $request->getBodyParam('client_id', 0);
+        $billable = (string) $request->getBodyParam('billable', '1') === '1';
+
+        if ($clientId <= 0) {
+            return Response::redirect('clients?err=Client%20invalide');
+        }
+
+        (new ClientRepository())->setBillable($userContext->companyId, $clientId, $billable);
+        Csrf::rotate();
+
+        return Response::redirect('clients/show?clientId=' . $clientId . '&msg=Statut%20mis%20%C3%A0%20jour');
     }
 }
 

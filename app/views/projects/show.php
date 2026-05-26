@@ -74,6 +74,47 @@ $invoiceIdQueryForQuoteNav = $preserveInvoiceIdForQuoteNav > 0 ? '&invoiceId=' .
                 <?php if (is_string($flashError ?? null) && trim((string) $flashError) !== ''): ?>
                     <div class="alert alert-danger" style="margin-bottom:12px;"><?= htmlspecialchars((string) $flashError, ENT_QUOTES, 'UTF-8') ?></div>
                 <?php endif; ?>
+                <?php
+                    // Déterminer les états pour les coches des tabs
+                    $tabDevisChecked = false;
+                    foreach (($quoteVersions ?? $quotes ?? []) as $_qv) {
+                        if ((string) ($_qv['status'] ?? '') === 'accepte') { $tabDevisChecked = true; break; }
+                    }
+                    $isWaitingPlanning = str_contains($projectNotesRaw, '[STATUS:WAITING_PLANNING]');
+                    $tabPlanifChecked = str_contains($projectNotesRaw, '[STATUS:PLANNED]')
+                        || $projectStatusCode === 'in_progress'
+                        || $projectStatusCode === 'completed';
+                    $tabFactureChecked = false;
+                    if (!empty($invoices)) {
+                        $tabFactureChecked = true;
+                        foreach ($invoices as $_inv) {
+                            if ((string) ($_inv['status'] ?? '') !== 'payee') { $tabFactureChecked = false; break; }
+                        }
+                    }
+                ?>
+
+                <!-- Tabs affaire -->
+                <div class="project-tabs" role="tablist">
+                    <button type="button" class="project-tabs__btn is-active" data-project-tab="ptab-infos">
+                        Informations
+                    </button>
+                    <button type="button" class="project-tabs__btn" data-project-tab="ptab-devis">
+                        <?php if ($tabDevisChecked): ?><span class="project-tab-check">&#10003;</span><?php endif; ?>
+                        Devis
+                    </button>
+                    <button type="button" class="project-tabs__btn" data-project-tab="ptab-planif">
+                        <?php if ($tabPlanifChecked): ?><span class="project-tab-check">&#10003;</span><?php endif; ?>
+                        Planification
+                    </button>
+                    <button type="button" class="project-tabs__btn" data-project-tab="ptab-factures">
+                        <?php if ($tabFactureChecked): ?><span class="project-tab-check">&#10003;</span><?php endif; ?>
+                        Facturation
+                    </button>
+                </div>
+
+                <!-- Tab Informations -->
+                <div id="ptab-infos" class="project-tab-panel is-active">
+
                 <div class="kpi-grid" style="margin-bottom:14px;">
                     <div class="kpi kpi-tint-1">
                         <div class="kpi-value"><?= htmlspecialchars(number_format((float) ($kpiQuoteAmount ?? 0), 2, ',', ' '), ENT_QUOTES, 'UTF-8') ?> €</div>
@@ -204,6 +245,69 @@ $invoiceIdQueryForQuoteNav = $preserveInvoiceIdForQuoteNav > 0 ? '&invoiceId=' .
                 })();
                 </script>
 
+                <div class="settings-grid" style="margin-top:14px;">
+                    <div class="section-card">
+                        <div class="section-head">
+                            <h3 class="section-title">Derniers rapports</h3>
+                            <?php if (!empty($canReportCreate)): ?>
+                                <a class="btn btn-secondary" style="padding:4px 10px; min-height:30px;" href="<?= htmlspecialchars($basePath . '/project-reports?projectId=' . (int) ($project['id'] ?? 0), ENT_QUOTES, 'UTF-8') ?>">+</a>
+                            <?php endif; ?>
+                        </div>
+                        <div class="section-content">
+                            <?php if (empty($canReportRead)): ?>
+                                <div class="alert alert-danger">Accès refusé.</div>
+                            <?php elseif (!empty($reports)): ?>
+                                <div style="display:grid; gap:10px;">
+                                    <?php foreach ($reports as $r): ?>
+                                        <div style="border:1px solid #dbe7ef; border-radius:12px; padding:10px 12px; background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%);">
+                                            <div class="muted" style="font-size:12px; margin-bottom:4px;"><?= htmlspecialchars(DateFormatter::frDateTime(isset($r['createdAt']) ? (string) $r['createdAt'] : null), ENT_QUOTES, 'UTF-8') ?></div>
+                                            <div style="font-weight:700;"><?= htmlspecialchars((string) ($r['title'] ?? ''), ENT_QUOTES, 'UTF-8') ?></div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php else: ?>
+                                <p class="muted">Aucun rapport.</p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <div class="section-card">
+                        <div class="section-head">
+                            <h3 class="section-title">Dernières photos</h3>
+                            <?php if (!empty($canPhotoUpload)): ?>
+                                <a class="btn btn-secondary" style="padding:4px 10px; min-height:30px;" href="<?= htmlspecialchars($basePath . '/project-photos?projectId=' . (int) ($project['id'] ?? 0), ENT_QUOTES, 'UTF-8') ?>">+</a>
+                            <?php endif; ?>
+                        </div>
+                        <div class="section-content">
+                            <?php if (empty($canPhotoRead)): ?>
+                                <div class="alert alert-danger">Accès refusé.</div>
+                            <?php elseif (!empty($photos)): ?>
+                                <div style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px;">
+                                    <?php foreach ($photos as $p): ?>
+                                        <?php $photoSrc = $basePath . (string) ($p['filePath'] ?? ''); $photoCaption = (string) ($p['caption'] ?? ('Photo #' . (int) ($p['id'] ?? 0))); ?>
+                                        <a href="<?= htmlspecialchars($photoSrc, ENT_QUOTES, 'UTF-8') ?>" class="project-photo-thumb" data-full="<?= htmlspecialchars($photoSrc, ENT_QUOTES, 'UTF-8') ?>" data-caption="<?= htmlspecialchars($photoCaption, ENT_QUOTES, 'UTF-8') ?>" style="display:block; border:1px solid #dbe7ef; border-radius:12px; overflow:hidden; text-decoration:none; color:inherit; background:#fff;">
+                                            <div style="aspect-ratio: 4 / 3; background:#f1f5f9;"><img src="<?= htmlspecialchars($photoSrc, ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars($photoCaption, ENT_QUOTES, 'UTF-8') ?>" style="width:100%; height:100%; object-fit:cover;"></div>
+                                            <div style="padding:8px 10px; font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"><?= htmlspecialchars($photoCaption, ENT_QUOTES, 'UTF-8') ?></div>
+                                        </a>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php else: ?>
+                                <p class="muted">Aucune photo.</p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="project-photo-lightbox" style="display:none; position:fixed; inset:0; background:rgba(2,6,23,.82); z-index:1000; padding:20px; align-items:center; justify-content:center;">
+                    <div style="max-width:90vw; max-height:90vh; display:flex; flex-direction:column; gap:8px;">
+                        <img id="project-photo-lightbox-image" src="" alt="Photo agrandie" style="max-width:90vw; max-height:82vh; object-fit:contain; border-radius:10px;">
+                        <div id="project-photo-lightbox-caption" style="color:#e2e8f0; font-size:13px;"></div>
+                    </div>
+                </div>
+
+                </div><!-- /ptab-infos -->
+
+                <!-- Tab Devis -->
+                <div id="ptab-devis" class="project-tab-panel">
                 <div class="sheet-stack">
                     <div class="section-card">
                         <h3 class="section-title">Devis et prestations</h3>
@@ -366,9 +470,13 @@ $invoiceIdQueryForQuoteNav = $preserveInvoiceIdForQuoteNav > 0 ? '&invoiceId=' .
                                             </div>
                                         </div>
 
-                                        <?php if (!empty($canCreateQuote)): ?>
-                                            <div style="padding:10px 12px 12px;">
-                                                <div class="inline-actions inline-actions--quote-footer">
+                                        <div style="padding:10px 12px 12px;">
+                                            <div class="inline-actions inline-actions--quote-footer">
+                                                <a class="btn btn-secondary" href="<?= htmlspecialchars($basePath . '/projects/quotes/pdf?quoteId=' . $activeQid, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener">Voir le PDF</a>
+                                                <?php if (!empty($activeQuote['proofFilePath'] ?? null)): ?>
+                                                    <a class="btn btn-secondary" href="<?= htmlspecialchars($basePath . (string) $activeQuote['proofFilePath'], ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener">Preuve de commande</a>
+                                                <?php endif; ?>
+                                                <?php if (!empty($canCreateQuote)): ?>
                                                     <?php if (!$hasAcceptedQuote && $activeQuoteStatus !== 'accepte'): ?>
                                                         <a class="btn btn-secondary" href="<?= htmlspecialchars($basePath . '/projects/quotes/version/new?projectId=' . (int) ($project['id'] ?? 0) . '&sourceQuoteId=' . $activeQid, ENT_QUOTES, 'UTF-8') ?>">
                                                             Modifier ce devis (nouvelle version)
@@ -381,9 +489,6 @@ $invoiceIdQueryForQuoteNav = $preserveInvoiceIdForQuoteNav > 0 ? '&invoiceId=' .
                                                             <input type="hidden" name="quote_id" value="<?= $activeQid ?>">
                                                             <button class="btn btn-primary" type="submit">Envoyer</button>
                                                         </form>
-                                                    <?php endif; ?>
-                                                    <?php if (!empty($activeQuote['proofFilePath'] ?? null)): ?>
-                                                        <a class="btn btn-secondary" href="<?= htmlspecialchars($basePath . (string) $activeQuote['proofFilePath'], ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener">Preuve de commande</a>
                                                     <?php endif; ?>
                                                     <?php if (!empty($canSendQuote) && $canValidateThisQuote): ?>
                                                         <form class="quote-validate-form" method="POST" action="<?= htmlspecialchars($basePath . '/projects/quotes/validate', ENT_QUOTES, 'UTF-8') ?>" enctype="multipart/form-data">
@@ -410,9 +515,9 @@ $invoiceIdQueryForQuoteNav = $preserveInvoiceIdForQuoteNav > 0 ? '&invoiceId=' .
                                                     <?php if ($hasAcceptedQuote): ?>
                                                         <span class="muted" style="align-self:center;">Un devis est accepté : la création de nouvelle version est verrouillée.</span>
                                                     <?php endif; ?>
-                                                </div>
+                                                <?php endif; ?>
                                             </div>
-                                        <?php endif; ?>
+                                        </div>
                                     </div>
                                 </div>
                             <?php else: ?>
@@ -423,7 +528,64 @@ $invoiceIdQueryForQuoteNav = $preserveInvoiceIdForQuoteNav > 0 ? '&invoiceId=' .
                             </div>
                         </div>
                     </div>
+                </div>
+                </div><!-- /ptab-devis -->
 
+                <!-- Tab Planification -->
+                <div id="ptab-planif" class="project-tab-panel">
+                    <?php if (!empty($canPlanningCreate) && !empty($activeQuote) && $tabDevisChecked && !empty($isWaitingPlanning)): ?>
+                        <div class="section-card">
+                            <h4 class="section-title" style="margin-bottom:8px;">Planifier l'affaire</h4>
+                            <div class="section-content">
+                                <form method="POST" action="<?= htmlspecialchars($basePath . '/projects/planify', ENT_QUOTES, 'UTF-8') ?>" class="form" style="max-width:none;">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                                    <input type="hidden" name="project_id" value="<?= (int) ($project['id'] ?? 0) ?>">
+                                    <div class="settings-grid" style="grid-template-columns: repeat(2, minmax(0,1fr));">
+                                        <div>
+                                            <label class="label" for="planned_start_date">Date de début</label>
+                                            <input class="input" id="planned_start_date" name="planned_start_date" type="date" required value="<?= htmlspecialchars((string) ($project['plannedStartDate'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                        </div>
+                                        <div>
+                                            <label class="label" for="planned_end_date">Date de fin</label>
+                                            <input class="input" id="planned_end_date" name="planned_end_date" type="date" required value="<?= htmlspecialchars((string) ($project['plannedEndDate'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                        </div>
+                                    </div>
+                                    <label class="label" for="site_address">Adresse (précision chantier)</label>
+                                    <input class="input" id="site_address" name="site_address" type="text" value="<?= htmlspecialchars((string) ($project['siteAddress'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                    <div class="settings-grid" style="grid-template-columns: repeat(2, minmax(0,1fr));">
+                                        <div>
+                                            <label class="label" for="site_city">Ville</label>
+                                            <input class="input" id="site_city" name="site_city" type="text" value="<?= htmlspecialchars((string) ($project['siteCity'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                        </div>
+                                        <div>
+                                            <label class="label" for="site_postal_code">Code postal</label>
+                                            <input class="input" id="site_postal_code" name="site_postal_code" type="text" value="<?= htmlspecialchars((string) ($project['sitePostalCode'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-primary" type="submit">Planifier</button>
+                                </form>
+                            </div>
+                        </div>
+                    <?php elseif ($tabPlanifChecked): ?>
+                        <div class="section-card">
+                            <div class="section-content">
+                                <div class="kv-grid">
+                                    <div class="kv"><div class="kv-label">Début prévu</div><div class="kv-value"><?= htmlspecialchars(DateFormatter::frDate(isset($project['plannedStartDate']) ? (string) $project['plannedStartDate'] : null), ENT_QUOTES, 'UTF-8') ?></div></div>
+                                    <div class="kv"><div class="kv-label">Fin prévue</div><div class="kv-value"><?= htmlspecialchars(DateFormatter::frDate(isset($project['plannedEndDate']) ? (string) $project['plannedEndDate'] : null), ENT_QUOTES, 'UTF-8') ?></div></div>
+                                    <div class="kv"><div class="kv-label">Adresse chantier</div><div class="kv-value"><?= htmlspecialchars((string) (($project['siteAddress'] ?? '') !== '' ? $project['siteAddress'] : '—'), ENT_QUOTES, 'UTF-8') ?></div></div>
+                                    <div class="kv"><div class="kv-label">Ville / CP</div><div class="kv-value"><?= htmlspecialchars(trim(trim((string) ($project['sitePostalCode'] ?? '')) . ' ' . trim((string) ($project['siteCity'] ?? ''))) ?: '—', ENT_QUOTES, 'UTF-8') ?></div></div>
+                                </div>
+                                <p class="muted" style="margin-top:12px;">L'affaire est planifiée.</p>
+                            </div>
+                        </div>
+                    <?php else: ?>
+                        <p class="muted">La planification sera disponible lorsqu'un devis sera accepté.</p>
+                    <?php endif; ?>
+                </div><!-- /ptab-planif -->
+
+                <!-- Tab Facturation -->
+                <div id="ptab-factures" class="project-tab-panel">
+                <div class="sheet-stack">
                     <div class="section-card">
                         <h3 class="section-title">Factures</h3>
                         <div class="section-content">
@@ -530,7 +692,7 @@ $invoiceIdQueryForQuoteNav = $preserveInvoiceIdForQuoteNav > 0 ? '&invoiceId=' .
                                                     && (!empty($canInvoiceUpdate) || !empty($canInvoiceCreate))
                                                 ):
                                             ?>
-                                                <form method="POST" action="<?= htmlspecialchars($basePath . '/invoices/delete-manual-draft', ENT_QUOTES, 'UTF-8') ?>" style="display:inline;" onsubmit="return confirm('Supprimer définitivement ce brouillon (facture manuelle sans devis) ?');">
+                                                <form method="POST" action="<?= htmlspecialchars($basePath . '/invoices/delete-manual-draft', ENT_QUOTES, 'UTF-8') ?>" style="display:inline;" data-confirm="Supprimer définitivement ce brouillon (facture manuelle sans devis) ?" data-confirm-title="Supprimer le brouillon" data-confirm-variant="danger" data-confirm-btn="Supprimer">
                                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken ?? '', ENT_QUOTES, 'UTF-8') ?>">
                                                     <input type="hidden" name="project_id" value="<?= $projShowId ?>">
                                                     <input type="hidden" name="invoice_id" value="<?= $cardInvId ?>">
@@ -567,40 +729,8 @@ $invoiceIdQueryForQuoteNav = $preserveInvoiceIdForQuoteNav > 0 ? '&invoiceId=' .
                         </div>
                     </div>
 
-                    <?php if (!empty($canPlanningCreate) && !empty($activeQuote) && !empty($hasAcceptedQuote) && !empty($isWaitingPlanning)): ?>
-                        <div class="section-card" style="margin-top:12px;">
-                            <h4 class="section-title" style="margin-bottom:8px;">Planifier l'affaire</h4>
-                            <div class="section-content">
-                                <form method="POST" action="<?= htmlspecialchars($basePath . '/projects/planify', ENT_QUOTES, 'UTF-8') ?>" class="form" style="max-width:none;">
-                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken ?? '', ENT_QUOTES, 'UTF-8') ?>">
-                                    <input type="hidden" name="project_id" value="<?= (int) ($project['id'] ?? 0) ?>">
-                                    <div class="settings-grid" style="grid-template-columns: repeat(2, minmax(0,1fr));">
-                                        <div>
-                                            <label class="label" for="planned_start_date">Date de début</label>
-                                            <input class="input" id="planned_start_date" name="planned_start_date" type="date" required value="<?= htmlspecialchars((string) ($project['plannedStartDate'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                                        </div>
-                                        <div>
-                                            <label class="label" for="planned_end_date">Date de fin</label>
-                                            <input class="input" id="planned_end_date" name="planned_end_date" type="date" required value="<?= htmlspecialchars((string) ($project['plannedEndDate'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                                        </div>
-                                    </div>
-                                    <label class="label" for="site_address">Adresse (précision chantier)</label>
-                                    <input class="input" id="site_address" name="site_address" type="text" value="<?= htmlspecialchars((string) ($project['siteAddress'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                                    <div class="settings-grid" style="grid-template-columns: repeat(2, minmax(0,1fr));">
-                                        <div>
-                                            <label class="label" for="site_city">Ville</label>
-                                            <input class="input" id="site_city" name="site_city" type="text" value="<?= htmlspecialchars((string) ($project['siteCity'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                                        </div>
-                                        <div>
-                                            <label class="label" for="site_postal_code">Code postal</label>
-                                            <input class="input" id="site_postal_code" name="site_postal_code" type="text" value="<?= htmlspecialchars((string) ($project['sitePostalCode'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                                        </div>
-                                    </div>
-                                    <button class="btn btn-primary" type="submit">Planifier</button>
-                                </form>
-                            </div>
-                        </div>
-                    <?php endif; ?>
+                </div>
+                </div><!-- /ptab-factures -->
 
                     <div id="invoice-payment-modal" class="status-modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="invoice-payment-title">
                         <div class="status-modal" style="max-width:420px;">
@@ -704,106 +834,46 @@ $invoiceIdQueryForQuoteNav = $preserveInvoiceIdForQuoteNav > 0 ? '&invoiceId=' .
                     })();
                     </script>
 
-                    <div class="settings-grid">
-                        <div class="section-card">
-                            <div class="section-head">
-                                <h3 class="section-title">Derniers rapports</h3>
-                                <?php if (!empty($canReportCreate)): ?>
-                                    <a class="btn btn-secondary" style="padding:4px 10px; min-height:30px;" href="<?= htmlspecialchars($basePath . '/project-reports?projectId=' . (int) ($project['id'] ?? 0), ENT_QUOTES, 'UTF-8') ?>">+</a>
-                                <?php endif; ?>
-                            </div>
-                            <div class="section-content">
-                                <?php if (empty($canReportRead)): ?>
-                                    <div class="alert alert-danger">Accès refusé.</div>
-                                <?php elseif (!empty($reports)): ?>
-                                    <div style="display:grid; gap:10px;">
-                                        <?php foreach ($reports as $r): ?>
-                                            <div style="border:1px solid #dbe7ef; border-radius:12px; padding:10px 12px; background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%);">
-                                                <div class="muted" style="font-size:12px; margin-bottom:4px;"><?= htmlspecialchars(DateFormatter::frDateTime(isset($r['createdAt']) ? (string) $r['createdAt'] : null), ENT_QUOTES, 'UTF-8') ?></div>
-                                                <div style="font-weight:700;"><?= htmlspecialchars((string) ($r['title'] ?? ''), ENT_QUOTES, 'UTF-8') ?></div>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                <?php else: ?>
-                                    <p class="muted">Aucun rapport.</p>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-
-                        <div class="section-card">
-                            <div class="section-head">
-                                <h3 class="section-title">Dernières photos</h3>
-                                <?php if (!empty($canPhotoUpload)): ?>
-                                    <a class="btn btn-secondary" style="padding:4px 10px; min-height:30px;" href="<?= htmlspecialchars($basePath . '/project-photos?projectId=' . (int) ($project['id'] ?? 0), ENT_QUOTES, 'UTF-8') ?>">+</a>
-                                <?php endif; ?>
-                            </div>
-                            <div class="section-content">
-                                <?php if (empty($canPhotoRead)): ?>
-                                    <div class="alert alert-danger">Accès refusé.</div>
-                                <?php elseif (!empty($photos)): ?>
-                                    <div style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px;">
-                                        <?php foreach ($photos as $p): ?>
-                                            <?php
-                                                $photoSrc = $basePath . (string) ($p['filePath'] ?? '');
-                                                $photoCaption = (string) ($p['caption'] ?? ('Photo #' . (int) ($p['id'] ?? 0)));
-                                            ?>
-                                            <a
-                                                href="<?= htmlspecialchars($photoSrc, ENT_QUOTES, 'UTF-8') ?>"
-                                                class="project-photo-thumb"
-                                                data-full="<?= htmlspecialchars($photoSrc, ENT_QUOTES, 'UTF-8') ?>"
-                                                data-caption="<?= htmlspecialchars($photoCaption, ENT_QUOTES, 'UTF-8') ?>"
-                                                style="display:block; border:1px solid #dbe7ef; border-radius:12px; overflow:hidden; text-decoration:none; color:inherit; background:#fff;"
-                                            >
-                                                <div style="aspect-ratio: 4 / 3; background:#f1f5f9;">
-                                                    <img src="<?= htmlspecialchars($photoSrc, ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars($photoCaption, ENT_QUOTES, 'UTF-8') ?>" style="width:100%; height:100%; object-fit:cover;">
-                                                </div>
-                                                <div style="padding:8px 10px; font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"><?= htmlspecialchars($photoCaption, ENT_QUOTES, 'UTF-8') ?></div>
-                                            </a>
-                                        <?php endforeach; ?>
-                                    </div>
-                                    <div id="project-photo-lightbox" style="display:none; position:fixed; inset:0; background:rgba(2,6,23,.82); z-index:1000; padding:20px; align-items:center; justify-content:center;">
-                                        <div style="max-width:90vw; max-height:90vh; display:flex; flex-direction:column; gap:8px;">
-                                            <img id="project-photo-lightbox-image" src="" alt="Photo agrandie" style="max-width:90vw; max-height:82vh; object-fit:contain; border-radius:10px;">
-                                            <div id="project-photo-lightbox-caption" style="color:#e2e8f0; font-size:13px;"></div>
-                                        </div>
-                                    </div>
-                                <?php else: ?>
-                                    <p class="muted">Aucune photo.</p>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             <?php endif; ?>
         </div>
     </div>
 </section>
 <script>
-    (function () {
-        var thumbs = document.querySelectorAll('.project-photo-thumb[data-full]');
-        var lightbox = document.getElementById('project-photo-lightbox');
-        var lightboxImage = document.getElementById('project-photo-lightbox-image');
-        var lightboxCaption = document.getElementById('project-photo-lightbox-caption');
-        if (!thumbs.length || !lightbox || !lightboxImage || !lightboxCaption) {
-            return;
-        }
+(function () {
+    // Tabs projet
+    var ptabBtns = document.querySelectorAll('.project-tabs__btn');
+    var ptabPanels = document.querySelectorAll('.project-tab-panel');
+    ptabBtns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var target = btn.getAttribute('data-project-tab') || '';
+            ptabBtns.forEach(function (b) { b.classList.remove('is-active'); });
+            ptabPanels.forEach(function (p) { p.classList.remove('is-active'); });
+            btn.classList.add('is-active');
+            var panel = document.getElementById(target);
+            if (panel) panel.classList.add('is-active');
+        });
+    });
 
+    // Lightbox photos
+    var thumbs = document.querySelectorAll('.project-photo-thumb[data-full]');
+    var lightbox = document.getElementById('project-photo-lightbox');
+    var lightboxImage = document.getElementById('project-photo-lightbox-image');
+    var lightboxCaption = document.getElementById('project-photo-lightbox-caption');
+    if (thumbs.length && lightbox && lightboxImage && lightboxCaption) {
         thumbs.forEach(function (thumb) {
             thumb.addEventListener('click', function (event) {
                 event.preventDefault();
-                var full = thumb.getAttribute('data-full') || '';
-                var caption = thumb.getAttribute('data-caption') || '';
-                lightboxImage.setAttribute('src', full);
-                lightboxCaption.textContent = caption;
+                lightboxImage.setAttribute('src', thumb.getAttribute('data-full') || '');
+                lightboxCaption.textContent = thumb.getAttribute('data-caption') || '';
                 lightbox.style.display = 'flex';
             });
         });
-
         lightbox.addEventListener('click', function () {
             lightbox.style.display = 'none';
             lightboxImage.setAttribute('src', '');
             lightboxCaption.textContent = '';
         });
-    })();
+    }
+})();
 </script>
 

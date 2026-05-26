@@ -249,7 +249,7 @@ $currentUserId = (int) ($currentUserId ?? 0);
                                     <?php if ($uid === $currentUserId): ?>
                                         <span class="muted">Compte courant</span>
                                     <?php else: ?>
-                                        <form method="post" action="<?= htmlspecialchars($basePath . '/platform/users/delete', ENT_QUOTES, 'UTF-8') ?>" onsubmit="return confirm('Confirmer la suppression de cet utilisateur plateforme ?');">
+                                        <form method="post" action="<?= htmlspecialchars($basePath . '/platform/users/delete', ENT_QUOTES, 'UTF-8') ?>" data-confirm="Confirmer la suppression de cet utilisateur plateforme ?" data-confirm-title="Supprimer l'utilisateur" data-confirm-variant="danger" data-confirm-btn="Supprimer">
                                             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) ($csrfToken ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                                             <input type="hidden" name="user_id" value="<?= $uid ?>">
                                             <button class="btn btn-danger btn-sm" type="submit">Supprimer</button>

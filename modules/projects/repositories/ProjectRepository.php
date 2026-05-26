@@ -215,9 +215,12 @@ final class ProjectRepository
     ): int {
         $pdo = Connection::pdo();
 
+        $projectNumber = $this->nextProjectNumber($companyId);
+
         $stmt = $pdo->prepare('
             INSERT INTO Project (
                 companyId,
+                projectNumber,
                 clientId,
                 name,
                 status,
@@ -232,6 +235,7 @@ final class ProjectRepository
                 updatedAt
             ) VALUES (
                 :companyId,
+                :projectNumber,
                 :clientId,
                 :name,
                 :status,
@@ -249,6 +253,7 @@ final class ProjectRepository
 
         $stmt->execute([
             'companyId' => $companyId,
+            'projectNumber' => $projectNumber,
             'clientId' => $clientId,
             'name' => $name,
             'status' => $status,
@@ -262,6 +267,28 @@ final class ProjectRepository
         ]);
 
         return (int) $pdo->lastInsertId();
+    }
+
+    private function nextProjectNumber(int $companyId): string
+    {
+        $pdo = Connection::pdo();
+        $year = date('Y');
+        $prefix = 'A' . $year;
+
+        $stmt = $pdo->prepare('
+            SELECT projectNumber FROM Project
+            WHERE companyId = :companyId AND projectNumber LIKE :prefix
+            ORDER BY projectNumber DESC LIMIT 1
+        ');
+        $stmt->execute(['companyId' => $companyId, 'prefix' => $prefix . '%']);
+        $last = $stmt->fetchColumn();
+
+        $seq = 1;
+        if (is_string($last) && preg_match('/^A\d{4}(\d+)$/', $last, $m)) {
+            $seq = (int) $m[1] + 1;
+        }
+
+        return $prefix . str_pad((string) $seq, 5, '0', STR_PAD_LEFT);
     }
 
     public function updateStatusAndReason(
@@ -430,6 +457,7 @@ final class ProjectRepository
         $stmt = $pdo->prepare('
             SELECT
                 p.id AS projectId,
+                p.projectNumber,
                 p.name AS projectName,
                 p.status AS projectStatus,
                 p.notes AS projectNotes,

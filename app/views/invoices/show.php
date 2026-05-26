@@ -56,7 +56,7 @@ $status = (string) ($invoice['status'] ?? '');
                     >Ajouter un paiement</button>
                 <?php endif; ?>
                 <?php if (!empty($canDeleteManualDraft)): ?>
-                    <form method="POST" action="<?= htmlspecialchars($basePath . '/invoices/delete-manual-draft', ENT_QUOTES, 'UTF-8') ?>" style="display:inline;" onsubmit="return confirm('Supprimer définitivement ce brouillon (facture manuelle sans devis) ?');">
+                    <form method="POST" action="<?= htmlspecialchars($basePath . '/invoices/delete-manual-draft', ENT_QUOTES, 'UTF-8') ?>" style="display:inline;" data-confirm="Supprimer définitivement ce brouillon (facture manuelle sans devis) ?" data-confirm-title="Supprimer le brouillon" data-confirm-variant="danger" data-confirm-btn="Supprimer">
                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) ($csrfToken ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                         <input type="hidden" name="invoice_id" value="<?= $invoiceId ?>">
                         <input type="hidden" name="project_id" value="<?= (int) ($projectId ?? 0) ?>">

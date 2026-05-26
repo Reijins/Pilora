@@ -1699,7 +1699,26 @@ final class ProjectsController extends BaseController
             $client = (new ClientRepository())->findByCompanyIdAndId($companyId, (int) ($quote['clientId'] ?? 0));
             $toEmail = trim((string) ($client['email'] ?? ''));
             if ($toEmail === '' || filter_var($toEmail, FILTER_VALIDATE_EMAIL) === false) {
-                return false;
+                $contactRepo = new ContactRepository();
+                $clientContacts = $contactRepo->listByCompanyIdAndClientId($companyId, (int) ($quote['clientId'] ?? 0));
+                $toEmail = '';
+                foreach ($clientContacts as $cc) {
+                    if (!empty($cc['isPrimaryContact']) && !empty($cc['email'])) {
+                        $toEmail = trim((string) $cc['email']);
+                        break;
+                    }
+                }
+                if ($toEmail === '' || filter_var($toEmail, FILTER_VALIDATE_EMAIL) === false) {
+                    foreach ($clientContacts as $cc) {
+                        if (!empty($cc['email'])) {
+                            $toEmail = trim((string) $cc['email']);
+                            break;
+                        }
+                    }
+                }
+                if ($toEmail === '' || filter_var($toEmail, FILTER_VALIDATE_EMAIL) === false) {
+                    return false;
+                }
             }
 
             $items = $quoteRepo->listItemsByCompanyIdAndQuoteId($companyId, $quoteId);
@@ -1869,6 +1888,21 @@ final class ProjectsController extends BaseController
             $toEmail = trim((string) ($client['email'] ?? ''));
         }
         if ($toEmail === '' || filter_var($toEmail, FILTER_VALIDATE_EMAIL) === false) {
+            $clientId = (int) ($quote['clientId'] ?? 0);
+            $clientContacts = (new ContactRepository())->listByCompanyIdAndClientId($companyId, $clientId);
+            foreach ($clientContacts as $cc) {
+                if (!empty($cc['isPrimaryContact']) && !empty($cc['email'])) {
+                    $toEmail = trim((string) $cc['email']);
+                    break;
+                }
+            }
+            if ($toEmail === '' || filter_var($toEmail, FILTER_VALIDATE_EMAIL) === false) {
+                foreach ($clientContacts as $cc) {
+                    if (!empty($cc['email'])) { $toEmail = trim((string) $cc['email']); break; }
+                }
+            }
+        }
+        if ($toEmail === '' || filter_var($toEmail, FILTER_VALIDATE_EMAIL) === false) {
             return Response::redirect('quotes/view?token=' . urlencode($token) . '&err=Email%20client%20invalide');
         }
         $otp = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
@@ -1914,6 +1948,21 @@ final class ProjectsController extends BaseController
         }
         if ($toEmail === '') {
             $toEmail = trim((string) ($client['email'] ?? ''));
+        }
+        if ($toEmail === '' || filter_var($toEmail, FILTER_VALIDATE_EMAIL) === false) {
+            $clientId = (int) ($quote['clientId'] ?? 0);
+            $clientContacts = (new ContactRepository())->listByCompanyIdAndClientId($companyId, $clientId);
+            foreach ($clientContacts as $cc) {
+                if (!empty($cc['isPrimaryContact']) && !empty($cc['email'])) {
+                    $toEmail = trim((string) $cc['email']);
+                    break;
+                }
+            }
+            if ($toEmail === '' || filter_var($toEmail, FILTER_VALIDATE_EMAIL) === false) {
+                foreach ($clientContacts as $cc) {
+                    if (!empty($cc['email'])) { $toEmail = trim((string) $cc['email']); break; }
+                }
+            }
         }
         if ($toEmail === '') return Response::redirect('quotes/view?token=' . urlencode($token) . '&err=Email%20client%20invalide');
         $ok = (new QuoteSignatureRepository())->verifyAndConsumeCode($companyId, $quoteId, $toEmail, $otp, new \DateTimeImmutable('now'));
@@ -1995,6 +2044,54 @@ final class ProjectsController extends BaseController
         return new Response($pdf, 200, [
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'attachment; filename="devis-signe-' . $quoteId . '.pdf"',
+        ]);
+    }
+
+    public function downloadQuotePdf(Request $request, UserContext $userContext): Response
+    {
+        if ($userContext->userId === null || $userContext->companyId === null) {
+            return Response::redirect('login');
+        }
+        $quoteId = (int) $request->getQueryParam('quoteId', '0');
+        if ($quoteId <= 0) {
+            return new Response('Paramètre manquant', 400);
+        }
+        $companyId = $userContext->companyId;
+        $quoteRepo = new QuoteRepository();
+        $quote = $quoteRepo->findByCompanyIdAndId($companyId, $quoteId);
+        if (!is_array($quote)) {
+            return new Response('Devis introuvable', 404);
+        }
+        $items = $quoteRepo->listItemsByCompanyIdAndQuoteId($companyId, $quoteId);
+        $client = (new ClientRepository())->findByCompanyIdAndId($companyId, (int) ($quote['clientId'] ?? 0));
+        $project = is_numeric($quote['projectId'] ?? null) ? (new ProjectRepository())->findByCompanyIdAndId($companyId, (int) $quote['projectId']) : null;
+        $contact = null;
+        if (is_array($project)) {
+            $notes = (string) ($project['notes'] ?? '');
+            if (preg_match('/\[CONTACT_ID:([0-9]+)\]/', $notes, $m)) {
+                $contact = (new ContactRepository())->findByCompanyIdAndId($companyId, (int) $m[1]);
+            }
+        }
+        $smtp = (new SmtpSettingsRepository())->getByCompanyId($companyId);
+        $totAgg = DocumentTotalsService::aggregate($items);
+        $viewsRoot = dirname(__DIR__, 3) . '/app/views';
+        $html = View::render($viewsRoot . '/quotes/pdf.php', [
+            'quote' => $quote,
+            'items' => $items,
+            'client' => $client ?? [],
+            'contact' => $contact ?? [],
+            'company' => (new CompanyRepository())->getDocumentIdentity($companyId, $smtp),
+            'vatRate' => $totAgg['vat_rate'],
+            'totalHt' => $totAgg['ht'],
+            'vatAmount' => $totAgg['vat_amount'],
+            'totalTtc' => $totAgg['ttc'],
+            'vatByRate' => $totAgg['vat_by_rate'],
+        ]);
+        $pdf = (new QuoteDeliveryService())->buildPdf($html);
+        $quoteNumber = (string) ($quote['quoteNumber'] ?? ('DEV-' . $quoteId));
+        return new Response($pdf, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="' . $quoteNumber . '.pdf"',
         ]);
     }
 }

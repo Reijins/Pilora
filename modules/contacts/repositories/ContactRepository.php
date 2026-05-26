@@ -28,17 +28,17 @@ final class ContactRepository
     }
 
     /**
-     * @return array<int, array{id:int, firstName:?string, lastName:?string, functionLabel:?string, email:?string, phone:?string}>
+     * @return array<int, array{id:int, firstName:?string, lastName:?string, functionLabel:?string, email:?string, phone:?string, isPrimaryContact:int}>
      */
     public function listByCompanyIdAndClientId(int $companyId, int $clientId): array
     {
         $pdo = Connection::pdo();
 
         $stmt = $pdo->prepare('
-            SELECT id, firstName, lastName, functionLabel, email, phone
+            SELECT id, firstName, lastName, functionLabel, email, phone, isPrimaryContact
             FROM Contact
             WHERE companyId = :companyId AND clientId = :clientId
-            ORDER BY id DESC
+            ORDER BY isPrimaryContact DESC, id ASC
         ');
         $stmt->execute([
             'companyId' => $companyId,
@@ -57,9 +57,14 @@ final class ContactRepository
         ?string $functionLabel,
         ?string $email,
         ?string $phone,
-        ?string $notes
+        ?string $notes,
+        bool $isPrimary = false
     ): int {
         $pdo = Connection::pdo();
+
+        if ($isPrimary) {
+            $this->clearPrimary($companyId, $clientId);
+        }
 
         $stmt = $pdo->prepare('
             INSERT INTO Contact (
@@ -71,6 +76,7 @@ final class ContactRepository
                 email,
                 phone,
                 notes,
+                isPrimaryContact,
                 createdAt,
                 updatedAt
             ) VALUES (
@@ -82,6 +88,7 @@ final class ContactRepository
                 :email,
                 :phone,
                 :notes,
+                :isPrimary,
                 NOW(),
                 NOW()
             )
@@ -95,6 +102,7 @@ final class ContactRepository
             'email' => $email,
             'phone' => $phone,
             'notes' => $notes,
+            'isPrimary' => $isPrimary ? 1 : 0,
         ]);
 
         return (int) $pdo->lastInsertId();
@@ -162,6 +170,43 @@ final class ContactRepository
             'contactId' => $contactId,
         ]);
         return $stmt->rowCount() > 0;
+    }
+
+    public function setPrimary(int $companyId, int $clientId, int $contactId): bool
+    {
+        $pdo = Connection::pdo();
+        $this->clearPrimary($companyId, $clientId);
+        $stmt = $pdo->prepare('
+            UPDATE Contact SET isPrimaryContact = 1, updatedAt = NOW()
+            WHERE companyId = :companyId AND clientId = :clientId AND id = :contactId
+        ');
+        $stmt->execute([
+            'companyId' => $companyId,
+            'clientId' => $clientId,
+            'contactId' => $contactId,
+        ]);
+        return $stmt->rowCount() > 0;
+    }
+
+    private function clearPrimary(int $companyId, int $clientId): void
+    {
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            UPDATE Contact SET isPrimaryContact = 0
+            WHERE companyId = :companyId AND clientId = :clientId AND isPrimaryContact = 1
+        ');
+        $stmt->execute([
+            'companyId' => $companyId,
+            'clientId' => $clientId,
+        ]);
+    }
+
+    public function countByClientId(int $companyId, int $clientId): int
+    {
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM Contact WHERE companyId = :companyId AND clientId = :clientId');
+        $stmt->execute(['companyId' => $companyId, 'clientId' => $clientId]);
+        return (int) $stmt->fetchColumn();
     }
 }
 

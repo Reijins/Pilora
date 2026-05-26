@@ -9,16 +9,20 @@ use PDO;
 final class ClientRepository
 {
     /**
-     * @return array<int, array{id:int, name:string, phone:?string, email:?string}>
+     * @return array<int, array<string, mixed>>
      */
     public function searchByCompanyId(int $companyId, ?string $query, int $limit = 50): array
     {
         $pdo = Connection::pdo();
 
         $sql = '
-            SELECT id, name, phone, email, accountingCustomerAccount
-            FROM Client
-            WHERE companyId = :companyId
+            SELECT c.id, c.clientNumber, c.name, c.status, c.isBillable, c.accountingCustomerAccount,
+                   pc.phone AS contactPhone, pc.email AS contactEmail,
+                   pc.firstName AS contactFirstName, pc.lastName AS contactLastName
+            FROM Client c
+            LEFT JOIN Contact pc ON pc.companyId = c.companyId AND pc.clientId = c.id AND pc.isPrimaryContact = 1
+            WHERE c.companyId = :companyId
+              AND c.status = "active"
         ';
 
         $params = ['companyId' => $companyId];
@@ -27,15 +31,17 @@ final class ClientRepository
         if ($query !== null && $query !== '') {
             $sql .= '
                 AND (
-                    name LIKE :q
-                    OR phone LIKE :q
-                    OR email LIKE :q
+                    c.name LIKE :q
+                    OR pc.phone LIKE :q
+                    OR pc.email LIKE :q
+                    OR pc.firstName LIKE :q
+                    OR pc.lastName LIKE :q
                 )
             ';
             $params['q'] = '%' . $query . '%';
         }
 
-        $sql .= ' ORDER BY id DESC LIMIT :limit';
+        $sql .= ' ORDER BY c.id DESC LIMIT :limit';
 
         $stmt = $pdo->prepare($sql);
         $stmt->bindValue('companyId', $params['companyId'], PDO::PARAM_INT);
@@ -45,14 +51,14 @@ final class ClientRepository
         $stmt->bindValue('limit', $limit, PDO::PARAM_INT);
 
         $stmt->execute();
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
     public function findByCompanyIdAndId(int $companyId, int $clientId): ?array
     {
         $pdo = Connection::pdo();
         $stmt = $pdo->prepare('
-            SELECT id, name, phone, email, address, notes, siret, accountingCustomerAccount
+            SELECT id, clientNumber, name, phone, email, address, notes, siret, accountingCustomerAccount, status, isBillable
             FROM Client
             WHERE companyId = :companyId AND id = :id
             LIMIT 1
@@ -86,13 +92,16 @@ final class ClientRepository
     ): int {
         $pdo = Connection::pdo();
 
+        $clientNumber = $this->nextClientNumber($companyId);
+
         $stmt = $pdo->prepare('
-            INSERT INTO Client (companyId, name, phone, email, address, notes, siret, accountingCustomerAccount, createdAt, updatedAt)
-            VALUES (:companyId, :name, :phone, :email, :address, :notes, :siret, :accountingCustomerAccount, NOW(), NOW())
+            INSERT INTO Client (companyId, clientNumber, name, phone, email, address, notes, siret, accountingCustomerAccount, createdAt, updatedAt)
+            VALUES (:companyId, :clientNumber, :name, :phone, :email, :address, :notes, :siret, :accountingCustomerAccount, NOW(), NOW())
         ');
 
         $stmt->execute([
             'companyId' => $companyId,
+            'clientNumber' => $clientNumber,
             'name' => $name,
             'phone' => $phone,
             'email' => $email,
@@ -103,6 +112,25 @@ final class ClientRepository
         ]);
 
         return (int) $pdo->lastInsertId();
+    }
+
+    private function nextClientNumber(int $companyId): string
+    {
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            SELECT clientNumber FROM Client
+            WHERE companyId = :companyId AND clientNumber IS NOT NULL
+            ORDER BY clientNumber DESC LIMIT 1
+        ');
+        $stmt->execute(['companyId' => $companyId]);
+        $last = $stmt->fetchColumn();
+
+        $seq = 1;
+        if (is_string($last) && preg_match('/^C(\d+)$/', $last, $m)) {
+            $seq = (int) $m[1] + 1;
+        }
+
+        return 'C' . str_pad((string) $seq, 5, '0', STR_PAD_LEFT);
     }
 
     public function updateClient(
@@ -141,6 +169,34 @@ final class ClientRepository
             'companyId' => $companyId,
             'clientId' => $clientId,
         ]);
+        return $stmt->rowCount() > 0;
+    }
+
+    public function softDelete(int $companyId, int $clientId): bool
+    {
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            UPDATE Client SET status = "deleted", updatedAt = NOW()
+            WHERE companyId = :companyId AND id = :clientId AND status = "active"
+        ');
+        $stmt->execute(['companyId' => $companyId, 'clientId' => $clientId]);
+
+        return $stmt->rowCount() > 0;
+    }
+
+    public function setBillable(int $companyId, int $clientId, bool $billable): bool
+    {
+        $pdo = Connection::pdo();
+        $stmt = $pdo->prepare('
+            UPDATE Client SET isBillable = :val, updatedAt = NOW()
+            WHERE companyId = :companyId AND id = :clientId
+        ');
+        $stmt->execute([
+            'val' => $billable ? 1 : 0,
+            'companyId' => $companyId,
+            'clientId' => $clientId,
+        ]);
+
         return $stmt->rowCount() > 0;
     }
 }

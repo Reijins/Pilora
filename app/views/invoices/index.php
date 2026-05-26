@@ -90,7 +90,7 @@ use Core\Support\DateFormatter;
                                                         && (!empty($canInvoiceUpdate) || !empty($canInvoiceCreate))
                                                     ):
                                                 ?>
-                                                    <form method="POST" action="<?= htmlspecialchars($basePath . '/invoices/delete-manual-draft', ENT_QUOTES, 'UTF-8') ?>" style="display:inline;" onsubmit="return confirm('Supprimer définitivement ce brouillon (facture manuelle sans devis) ?');">
+                                                    <form method="POST" action="<?= htmlspecialchars($basePath . '/invoices/delete-manual-draft', ENT_QUOTES, 'UTF-8') ?>" style="display:inline;" data-confirm="Supprimer définitivement ce brouillon (facture manuelle sans devis) ?" data-confirm-title="Supprimer le brouillon" data-confirm-variant="danger" data-confirm-btn="Supprimer">
                                                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) ($csrfToken ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                                                         <input type="hidden" name="invoice_id" value="<?= $iid ?>">
                                                         <input type="hidden" name="project_id" value="<?= $projId ?>">

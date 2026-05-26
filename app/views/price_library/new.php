@@ -49,13 +49,16 @@ $categories = is_array($categories ?? null) ? $categories : [];
                     <?php endforeach; ?>
                 </select>
 
-                <label class="label" for="default_vat_rate">TVA par défaut (%)</label>
-                <input class="input" id="default_vat_rate" name="default_vat_rate" type="number" step="0.01" min="0" max="100" placeholder="Ex. 20 — vide = société">
-                <p class="muted" style="margin:4px 0 0;font-size:13px;">Optionnel: si vide, la valeur de la catégorie sera utilisée, sinon celle de la société.</p>
+                <div id="vat-account-fields" style="display:block;">
+                    <label class="label" for="default_vat_rate">TVA par défaut (%)</label>
+                    <input class="input" id="default_vat_rate" name="default_vat_rate" type="number" step="0.01" min="0" max="100" placeholder="Ex. 20 — vide = société">
+                    <p class="muted" style="margin:4px 0 0;font-size:13px;">Optionnel: si vide, la valeur de la société s'applique.</p>
 
-                <label class="label" for="default_revenue_account">Compte de vente (numéro)</label>
-                <input class="input" id="default_revenue_account" name="default_revenue_account" type="text" maxlength="32" placeholder="70600000">
-                <p class="muted" style="margin:4px 0 0;font-size:13px;">Optionnel: si vide, le compte de la catégorie s'applique.</p>
+                    <label class="label" for="default_revenue_account">Compte de vente (numéro)</label>
+                    <input class="input" id="default_revenue_account" name="default_revenue_account" type="text" maxlength="32" placeholder="70600000">
+                    <p class="muted" style="margin:4px 0 0;font-size:13px;">Optionnel: si vide, le compte de la société s'applique.</p>
+                </div>
+                <p id="vat-account-category-hint" class="muted" style="display:none;margin:4px 0 0;font-size:13px;">La TVA et le compte de vente sont hérités de la catégorie sélectionnée.</p>
 
                 <label class="label" for="estimated_time_hours">Temps estimé (heures)</label>
                 <input class="input" id="estimated_time_hours" name="estimated_time_hours" type="number" min="0" step="0.01" placeholder="Ex. 1,5">
@@ -75,3 +78,17 @@ $categories = is_array($categories ?? null) ? $categories : [];
         </div>
     </div>
 </section>
+<script>
+(function(){
+    var catSelect = document.getElementById('category_id');
+    var fields = document.getElementById('vat-account-fields');
+    var hint = document.getElementById('vat-account-category-hint');
+    function toggle(){
+        var hasCategory = catSelect.value !== '0' && catSelect.value !== '';
+        fields.style.display = hasCategory ? 'none' : 'block';
+        hint.style.display = hasCategory ? 'block' : 'none';
+    }
+    catSelect.addEventListener('change', toggle);
+    toggle();
+})();
+</script>

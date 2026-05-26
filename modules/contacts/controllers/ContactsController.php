@@ -100,7 +100,9 @@ final class ContactsController extends BaseController
         }
 
         try {
-            (new ContactRepository())->create(
+            $contactRepo = new ContactRepository();
+            $existingCount = $contactRepo->countByClientId($userContext->companyId, $clientId);
+            $contactRepo->create(
                 companyId: $userContext->companyId,
                 clientId: $clientId,
                 firstName: $firstName !== '' ? $firstName : null,
@@ -108,7 +110,8 @@ final class ContactsController extends BaseController
                 functionLabel: $functionLabel !== '' ? $functionLabel : null,
                 email: $email !== '' ? $email : null,
                 phone: $phone !== '' ? $phone : null,
-                notes: null
+                notes: null,
+                isPrimary: $existingCount === 0
             );
         } catch (\Throwable) {
             $target = $returnTo === 'contacts' ? 'contacts/new?clientId=' . $clientId : 'clients/show?clientId=' . $clientId;
@@ -261,6 +264,30 @@ final class ContactsController extends BaseController
         }
         Csrf::rotate();
         return Response::redirect('clients/show?clientId=' . $clientId . '&msg=Contact%20supprime');
+    }
+
+    public function setPrimary(Request $request, UserContext $userContext): Response
+    {
+        if ($userContext->userId === null || $userContext->companyId === null) {
+            return Response::redirect('login');
+        }
+        if (!Csrf::verify((string) $request->getBodyParam('csrf_token', ''))) {
+            return Response::redirect('clients');
+        }
+        if (!in_array('client.create', $userContext->permissions, true)) {
+            return Response::redirect('clients');
+        }
+
+        $contactId = (int) $request->getBodyParam('contact_id', 0);
+        $clientId = (int) $request->getBodyParam('client_id', 0);
+        if ($contactId <= 0 || $clientId <= 0) {
+            return Response::redirect('clients?err=Contact%20invalide');
+        }
+
+        (new ContactRepository())->setPrimary($userContext->companyId, $clientId, $contactId);
+        Csrf::rotate();
+
+        return Response::redirect('clients/show?clientId=' . $clientId . '&msg=Contact%20principal%20mis%20%C3%A0%20jour');
     }
 }
 

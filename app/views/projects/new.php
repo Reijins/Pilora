@@ -107,19 +107,6 @@ declare(strict_types=1);
                                         <input class="input" id="quote_title" name="quote_title" type="text" placeholder="Ex: Devis initial - gros oeuvre">
                                     </div>
 
-                                    <?php
-                                        $datalistOptions = [];
-                                        foreach (($priceItems ?? []) as $it) {
-                                            $nm = trim((string) ($it['name'] ?? ''));
-                                            if ($nm !== '') $datalistOptions[] = $nm;
-                                        }
-                                        $datalistOptions = array_values(array_unique($datalistOptions));
-                                    ?>
-                                    <datalist id="affairPriceLibraryNames">
-                                        <?php foreach ($datalistOptions as $nm): ?>
-                                            <option value="<?= htmlspecialchars($nm, ENT_QUOTES, 'UTF-8') ?>"></option>
-                                        <?php endforeach; ?>
-                                    </datalist>
 
                                     <div class="affair-field-full">
                                         <div class="affair-quote-table-scroll" style="overflow-x:auto; -webkit-overflow-scrolling:touch; width:100%;">
@@ -138,8 +125,8 @@ declare(strict_types=1);
                                                 </thead>
                                                 <tbody id="affair-quote-items-body">
                                                 <tr class="affair-quote-item-row" data-row-index="0">
-                                                    <td style="min-width:160px;">
-                                                        <input class="input affair-item-name-input" name="item_name[]" type="text" list="affairPriceLibraryNames" placeholder="Nom de la prestation" required style="width:100%;">
+                                                    <td style="min-width:200px;">
+                                                        <input class="input affair-item-name-input" name="item_name[]" type="text" placeholder="Nom de la prestation" required style="width:100%;" autocomplete="off">
                                                         <input type="hidden" class="affair-item-price-item-id" name="item_price_item_id[]" value="">
                                                         <input type="hidden" class="affair-item-revenue-hidden" name="item_revenue_account[]" value="">
                                                     </td>
@@ -367,13 +354,75 @@ declare(strict_types=1);
                                 });
                             }
 
+                            var globalDropdown = document.createElement('div');
+                            globalDropdown.className = 'affair-autocomplete-dropdown affair-autocomplete-dropdown--global';
+                            document.body.appendChild(globalDropdown);
+                            var activeDropdownRow = null;
+
+                            function showDropdown(row, query) {
+                                var nameInput = row.querySelector('.affair-item-name-input');
+                                if (!nameInput) return;
+                                activeDropdownRow = row;
+
+                                var rect = nameInput.getBoundingClientRect();
+                                globalDropdown.style.position = 'fixed';
+                                globalDropdown.style.top = rect.bottom + 'px';
+                                globalDropdown.style.left = rect.left + 'px';
+                                globalDropdown.style.width = rect.width + 'px';
+
+                                var q = normalize(query);
+                                var results = priceCatalog.filter(function (it) {
+                                    if (q === '') return true;
+                                    return normalize(it.name).indexOf(q) !== -1;
+                                }).slice(0, 12);
+
+                                if (results.length === 0 && q !== '') {
+                                    globalDropdown.innerHTML = '<div class="affair-autocomplete-empty">Aucune prestation trouvée — saisie libre</div>';
+                                } else if (results.length === 0) {
+                                    globalDropdown.innerHTML = '<div class="affair-autocomplete-empty">Bibliothèque vide</div>';
+                                } else {
+                                    globalDropdown.innerHTML = results.map(function (it) {
+                                        var priceStr = Number(it.unitPrice).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                        return '<div class="affair-autocomplete-item" data-name="' + it.name.replace(/"/g, '&quot;') + '">'
+                                            + '<span class="affair-autocomplete-item__name">' + it.name.replace(/</g, '&lt;') + '</span>'
+                                            + '<span class="affair-autocomplete-item__price">' + priceStr + ' €</span>'
+                                            + '</div>';
+                                    }).join('');
+                                }
+                                globalDropdown.classList.add('is-visible');
+
+                                globalDropdown.querySelectorAll('.affair-autocomplete-item').forEach(function (item) {
+                                    item.addEventListener('mousedown', function (e) {
+                                        e.preventDefault();
+                                        var nameInput = row.querySelector('.affair-item-name-input');
+                                        if (nameInput) {
+                                            nameInput.value = item.getAttribute('data-name');
+                                            syncRowFromName(row);
+                                        }
+                                        hideDropdown();
+                                    });
+                                });
+                            }
+
+                            function hideDropdown() {
+                                globalDropdown.classList.remove('is-visible');
+                                activeDropdownRow = null;
+                            }
+
                             function bindRow(row) {
                                 var nameInput = row.querySelector('.affair-item-name-input');
                                 var removeBtn = row.querySelector('.affair-btn-remove-row');
                                 if (nameInput) {
+                                    nameInput.addEventListener('focus', function () { showDropdown(row, nameInput.value); });
+                                    nameInput.addEventListener('input', function () {
+                                        showDropdown(row, nameInput.value);
+                                        updateUnitLabelFromName(row);
+                                    });
                                     nameInput.addEventListener('change', function () { syncRowFromName(row); });
-                                    nameInput.addEventListener('blur', function () { syncRowFromName(row); });
-                                    nameInput.addEventListener('input', function () { updateUnitLabelFromName(row); });
+                                    nameInput.addEventListener('blur', function () {
+                                        setTimeout(function () { hideDropdown(); }, 180);
+                                        syncRowFromName(row);
+                                    });
                                 }
                                 if (removeBtn) {
                                     removeBtn.addEventListener('click', function () {
@@ -407,6 +456,8 @@ declare(strict_types=1);
                                 reindexRows();
                                 bindRow(clone);
                                 recalcTotals();
+                                var newNameInput = clone.querySelector('.affair-item-name-input');
+                                if (newNameInput) newNameInput.focus();
                             });
 
                             body.querySelectorAll('.affair-quote-item-row').forEach(bindRow);
