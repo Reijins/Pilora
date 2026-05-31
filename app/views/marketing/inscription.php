@@ -162,6 +162,30 @@ $paidPackIndex = 0;
 
                 <input class="input" id="company_name" name="company_name" type="text" required maxlength="255" autocomplete="organization">
 
+                <label class="label" for="company_siret"><?= m_icon('upc-scan') ?> SIRET</label>
+
+                <input class="input" id="company_siret" name="company_siret" type="text" required maxlength="14" inputmode="numeric" pattern="[0-9]{14}" placeholder="14 chiffres" autocomplete="off">
+
+                <label class="label" for="company_address"><?= m_icon('geo-alt') ?> Adresse postale</label>
+
+                <textarea class="input marketing-signup-textarea" id="company_address" name="company_address" required maxlength="500" rows="3" placeholder="Numéro, voie, code postal, ville"></textarea>
+
+                <label class="label marketing-signup-checkbox-label" for="billing_same_as_address">
+
+                    <input type="checkbox" id="billing_same_as_address" checked>
+
+                    <span>Adresse de facturation identique à l'adresse postale</span>
+
+                </label>
+
+                <div id="billing_address_wrap" class="marketing-signup-billing-wrap is-hidden">
+
+                    <label class="label" for="company_billing_address"><?= m_icon('receipt') ?> Adresse postale de facturation</label>
+
+                    <textarea class="input marketing-signup-textarea" id="company_billing_address" name="company_billing_address" maxlength="500" rows="3" placeholder="Numéro, voie, code postal, ville"></textarea>
+
+                </div>
+
             </div>
 
             <div class="marketing-signup-details__col">

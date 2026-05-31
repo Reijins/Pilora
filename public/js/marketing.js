@@ -77,4 +77,43 @@
       }
     });
   });
+
+  var billingSameCheckbox = document.getElementById('billing_same_as_address');
+  var billingWrap = document.getElementById('billing_address_wrap');
+  var postalAddress = document.getElementById('company_address');
+  var billingAddress = document.getElementById('company_billing_address');
+  var signupForm = document.querySelector('.marketing-signup-form');
+
+  function syncBillingAddressField() {
+    if (!billingSameCheckbox || !billingAddress || !postalAddress) {
+      return;
+    }
+    var same = billingSameCheckbox.checked;
+    if (billingWrap) {
+      billingWrap.classList.toggle('is-hidden', same);
+    }
+    if (same) {
+      billingAddress.value = postalAddress.value.trim();
+      billingAddress.removeAttribute('required');
+    } else {
+      billingAddress.setAttribute('required', 'required');
+    }
+  }
+
+  if (billingSameCheckbox) {
+    billingSameCheckbox.addEventListener('change', syncBillingAddressField);
+  }
+  if (postalAddress) {
+    postalAddress.addEventListener('input', function () {
+      if (billingSameCheckbox && billingSameCheckbox.checked && billingAddress) {
+        billingAddress.value = postalAddress.value.trim();
+      }
+    });
+  }
+  if (signupForm) {
+    signupForm.addEventListener('submit', function () {
+      syncBillingAddressField();
+    });
+  }
+  syncBillingAddressField();
 })();

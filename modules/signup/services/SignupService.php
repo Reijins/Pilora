@@ -29,6 +29,9 @@ final class SignupService
         $password = (string) ($input['password'] ?? '');
         $fullName = trim((string) ($input['full_name'] ?? ''));
         $companyName = trim((string) ($input['company_name'] ?? ''));
+        $companySiret = preg_replace('/\s+/', '', trim((string) ($input['company_siret'] ?? ''))) ?? '';
+        $companyAddress = trim((string) ($input['company_address'] ?? ''));
+        $companyBillingAddress = trim((string) ($input['company_billing_address'] ?? ''));
         $packId = (int) ($input['pack_id'] ?? 0);
         $billingCycle = trim((string) ($input['billing_cycle'] ?? 'monthly'));
         if (!in_array($billingCycle, ['monthly', 'annual'], true)) {
@@ -37,6 +40,15 @@ final class SignupService
 
         if ($companyName === '' || $email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             throw new \InvalidArgumentException('Informations incomplètes.');
+        }
+        if ($companySiret === '' || !preg_match('/^[0-9]{14}$/', $companySiret)) {
+            throw new \InvalidArgumentException('Le SIRET doit contenir 14 chiffres.');
+        }
+        if ($companyAddress === '') {
+            throw new \InvalidArgumentException('L\'adresse postale est requise.');
+        }
+        if ($companyBillingAddress === '') {
+            throw new \InvalidArgumentException('L\'adresse de facturation est requise.');
         }
         if (strlen($password) < 8) {
             throw new \InvalidArgumentException('Le mot de passe doit contenir au moins 8 caractères.');
@@ -54,6 +66,9 @@ final class SignupService
         $token = bin2hex(random_bytes(24));
         $payload = [
             'company_name' => $companyName,
+            'company_siret' => $companySiret,
+            'company_address' => $companyAddress,
+            'company_billing_address' => $companyBillingAddress,
             'billing_email' => $email,
             'user_email' => $email,
             'full_name' => $fullName !== '' ? $fullName : 'Administrateur',
@@ -142,6 +157,9 @@ final class SignupService
 
             $result = (new TenantProvisioningService())->provision([
                 'company_name' => (string) ($payload['company_name'] ?? ''),
+                'company_siret' => (string) ($payload['company_siret'] ?? ''),
+                'company_address' => (string) ($payload['company_address'] ?? ''),
+                'company_billing_address' => (string) ($payload['company_billing_address'] ?? ''),
                 'billing_email' => (string) ($payload['billing_email'] ?? ''),
                 'user_email' => (string) ($payload['user_email'] ?? ''),
                 'password_hash' => (string) ($payload['password_hash'] ?? ''),

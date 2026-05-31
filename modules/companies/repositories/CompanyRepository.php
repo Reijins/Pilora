@@ -175,17 +175,20 @@ final class CompanyRepository
     }
 
     /**
-     * @param array{name:string, billingEmail:?string, status:string} $data
+     * @param array{name:string, billingEmail:?string, status:string, siret?:?string, address?:?string, billingAddress?:?string} $data
      */
     public function create(array $data): int
     {
         $pdo = Connection::pdo();
         $stmt = $pdo->prepare('
-            INSERT INTO Company (name, billingEmail, status, companyKind)
-            VALUES (:name, :billingEmail, :status, "tenant")
+            INSERT INTO Company (name, siret, address, billingAddress, billingEmail, status, companyKind)
+            VALUES (:name, :siret, :address, :billingAddress, :billingEmail, :status, "tenant")
         ');
         $stmt->execute([
             'name' => $data['name'],
+            'siret' => isset($data['siret']) && $data['siret'] !== '' ? $data['siret'] : null,
+            'address' => isset($data['address']) && $data['address'] !== '' ? $data['address'] : null,
+            'billingAddress' => isset($data['billingAddress']) && $data['billingAddress'] !== '' ? $data['billingAddress'] : null,
             'billingEmail' => $data['billingEmail'] !== null && $data['billingEmail'] !== '' ? $data['billingEmail'] : null,
             'status' => $data['status'],
         ]);

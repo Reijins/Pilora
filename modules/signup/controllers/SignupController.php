@@ -100,6 +100,9 @@ final class SignupController extends BaseController
                 'password' => $password,
                 'full_name' => $request->getBodyParam('full_name', ''),
                 'company_name' => $request->getBodyParam('company_name', ''),
+                'company_siret' => $request->getBodyParam('company_siret', ''),
+                'company_address' => $request->getBodyParam('company_address', ''),
+                'company_billing_address' => $request->getBodyParam('company_billing_address', ''),
                 'pack_id' => $request->getBodyParam('pack_id', 0),
                 'billing_cycle' => $request->getBodyParam('billing_cycle', 'monthly'),
             ]);

@@ -7,6 +7,9 @@ SET NAMES utf8mb4;
 CREATE TABLE IF NOT EXISTS Company (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   name VARCHAR(255) NOT NULL,
+  siret VARCHAR(14) NULL,
+  address TEXT NULL,
+  billingAddress TEXT NULL,
   workHoursPerDay DECIMAL(5,2) NOT NULL DEFAULT 8.00,
   companyKind ENUM('tenant','platform') NOT NULL DEFAULT 'tenant',
   billingEmail VARCHAR(255) NULL,

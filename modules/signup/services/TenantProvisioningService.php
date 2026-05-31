@@ -17,6 +17,9 @@ final class TenantProvisioningService
     /**
      * @param array{
      *   company_name:string,
+     *   company_siret?:string,
+     *   company_address?:string,
+     *   company_billing_address?:string,
      *   billing_email:?string,
      *   pack:array,
      *   billing_cycle:string,
@@ -62,6 +65,9 @@ final class TenantProvisioningService
         $repo = new CompanyRepository();
         $companyId = $repo->create([
             'name' => $companyName,
+            'siret' => trim((string) ($input['company_siret'] ?? '')),
+            'address' => trim((string) ($input['company_address'] ?? '')),
+            'billingAddress' => trim((string) ($input['company_billing_address'] ?? '')),
             'billingEmail' => $billingEmail,
             'status' => 'active',
         ]);
