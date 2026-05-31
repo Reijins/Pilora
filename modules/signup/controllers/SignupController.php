@@ -28,6 +28,15 @@ final class SignupController extends BaseController
         $packs = [];
         try {
             $packs = (new PackRepository())->listAll();
+            usort($packs, static function (array $a, array $b): int {
+                $priceA = (float) ($a['price'] ?? 0);
+                $priceB = (float) ($b['price'] ?? 0);
+                if ($priceA !== $priceB) {
+                    return $priceA <=> $priceB;
+                }
+
+                return strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+            });
         } catch (\Throwable) {
         }
 

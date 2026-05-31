@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Modules\Marketing\Helpers\MarketingUi;
+
 $basePath = isset($basePath) && is_string($basePath) ? $basePath : '';
 
 $packs = is_array($packs ?? null) ? $packs : [];
@@ -10,9 +12,11 @@ $selectedPackId = (int) ($selectedPackId ?? 0);
 
 $p = static fn (string $path): string => $basePath . $path;
 
+$paidPackIndex = 0;
+
 ?>
 
-<section class="marketing-page-header">
+<section class="marketing-page-header marketing-page-header--signup">
 
     <h1><?= m_icon('rocket-takeoff', 'marketing-page-header__icon') ?> Créer votre espace Pilora</h1>
 
@@ -36,115 +40,166 @@ $p = static fn (string $path): string => $basePath . $path;
 
     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) ($csrfToken ?? ''), ENT_QUOTES, 'UTF-8') ?>">
 
+    <section class="marketing-signup-section marketing-signup-section--packs">
 
+        <div class="marketing-signup-section__head">
 
-    <h2 class="marketing-signup-form__heading"><?= m_icon('box-seam') ?> Votre pack</h2>
+            <h2 class="marketing-signup-form__heading"><?= m_icon('box-seam') ?> Choisissez votre pack</h2>
 
-    <p class="muted" style="margin-bottom:1rem;">Consultez le <a href="<?= htmlspecialchars($p('/tarifs'), ENT_QUOTES, 'UTF-8') ?>">détail des tarifs</a>.</p>
+            <p class="muted marketing-signup-form__intro">Consultez le <a href="<?= htmlspecialchars($p('/tarifs'), ENT_QUOTES, 'UTF-8') ?>">détail des tarifs</a>.</p>
 
-    <div class="marketing-signup-packs">
+        </div>
 
-        <?php foreach ($packs as $pack): ?>
+        <?php if ($packs !== []): ?>
 
-            <?php
+            <div class="marketing-billing-toggle" role="group" aria-label="Cycle de facturation">
 
-            $pid = (int) ($pack['id'] ?? 0);
+                <span class="marketing-billing-toggle__label is-active" data-billing-label="monthly">Mensuel</span>
 
-            $price = (float) ($pack['price'] ?? 0);
+                <button type="button" class="marketing-billing-toggle__switch" id="billing_cycle_switch" role="switch" aria-checked="false" aria-labelledby="billing-label-monthly billing-label-annual">
 
-            $isTrial = $price <= 0;
+                    <span class="marketing-billing-toggle__track"><span class="marketing-billing-toggle__thumb"></span></span>
 
-            $checked = $pid === $selectedPackId ? ' checked' : '';
+                </button>
 
-            ?>
+                <span class="marketing-billing-toggle__label" data-billing-label="annual" id="billing-label-annual">Annuel</span>
 
-            <label class="marketing-signup-pack">
+                <span class="marketing-billing-toggle__hint muted" id="billing-label-monthly">Facturation au mois ou à l'année</span>
 
-                <input type="radio" name="pack_id" value="<?= $pid ?>" required<?= $checked ?>>
+            </div>
 
-                <span class="marketing-signup-pack__icon"><?= m_icon($isTrial ? 'gift' : 'star-fill') ?></span>
+            <input type="hidden" name="billing_cycle" id="billing_cycle" value="monthly">
 
-                <span class="marketing-signup-pack__body">
+        <?php endif; ?>
 
-                    <strong><?= htmlspecialchars((string) ($pack['name'] ?? 'Pack'), ENT_QUOTES, 'UTF-8') ?></strong>
+        <div class="marketing-signup-packs-grid">
 
-                    <span class="muted">
+            <?php foreach ($packs as $pack): ?>
+
+                <?php
+
+                $pid = (int) ($pack['id'] ?? 0);
+
+                $price = (float) ($pack['price'] ?? 0);
+
+                $isTrial = $price <= 0;
+
+                $currentPaidIndex = $isTrial ? -1 : $paidPackIndex;
+
+                if (!$isTrial) {
+                    ++$paidPackIndex;
+                }
+
+                $featured = !$isTrial && $currentPaidIndex === 1;
+
+                $checked = $pid === $selectedPackId ? ' checked' : '';
+
+                $annualPrice = $isTrial ? 0 : (int) round($price * 12);
+
+                $tierClass = $isTrial ? 'marketing-signup-pack-card--tier-free' : 'marketing-signup-pack-card--tier-' . max(0, $currentPaidIndex);
+
+                $packIcon = MarketingUi::packIcon($isTrial, max(0, $currentPaidIndex));
+
+                ?>
+
+                <label class="marketing-signup-pack-card <?= htmlspecialchars($tierClass, ENT_QUOTES, 'UTF-8') ?><?= $featured ? ' marketing-signup-pack-card--featured' : '' ?><?= $checked !== '' ? ' is-selected' : '' ?>">
+
+                    <input type="radio" name="pack_id" value="<?= $pid ?>" required<?= $checked ?> class="marketing-signup-pack-card__input">
+
+                    <?php if ($featured): ?>
+
+                        <span class="marketing-signup-pack-card__badge">Populaire</span>
+
+                    <?php endif; ?>
+
+                    <span class="marketing-signup-pack-card__icon"><?= m_icon($packIcon) ?></span>
+
+                    <span class="marketing-signup-pack-card__name"><?= htmlspecialchars((string) ($pack['name'] ?? 'Pack'), ENT_QUOTES, 'UTF-8') ?></span>
+
+                    <span class="marketing-signup-pack-card__price" data-monthly="<?= $isTrial ? '' : (int) round($price) ?>" data-annual="<?= $annualPrice ?>" data-trial="<?= $isTrial ? '1' : '0' ?>">
 
                         <?php if ($isTrial): ?>
 
-                            Essai gratuit — <?= (int) ($pack['maxUsers'] ?? 0) ?> utilisateurs
+                            <strong>Essai gratuit</strong>
 
                         <?php else: ?>
 
-                            <?= htmlspecialchars(number_format($price, 0, ',', ' '), ENT_QUOTES, 'UTF-8') ?> &euro;/mois — <?= (int) ($pack['maxUsers'] ?? 0) ?> utilisateurs
+                            <strong class="marketing-signup-pack-card__amount"><?= htmlspecialchars(number_format($price, 0, ',', ' '), ENT_QUOTES, 'UTF-8') ?> &euro;</strong>
+
+                            <span class="marketing-signup-pack-card__period">/ mois</span>
 
                         <?php endif; ?>
 
                     </span>
 
-                </span>
+                    <span class="marketing-signup-pack-card__meta"><?= m_icon('people') ?> Jusqu'à <?= (int) ($pack['maxUsers'] ?? 0) ?> utilisateur<?= (int) ($pack['maxUsers'] ?? 0) > 1 ? 's' : '' ?></span>
 
-            </label>
+                    <span class="marketing-signup-pack-card__check"><?= m_icon('check-circle-fill') ?></span>
 
-        <?php endforeach; ?>
+                </label>
 
-    </div>
+            <?php endforeach; ?>
 
-    <?php if ($packs === []): ?>
+        </div>
 
-        <p class="marketing-alert marketing-alert--danger"><?= m_icon('info-circle') ?> Aucun pack disponible. <a href="<?= htmlspecialchars($p('/demo'), ENT_QUOTES, 'UTF-8') ?>">Contactez-nous</a>.</p>
+        <?php if ($packs === []): ?>
 
-    <?php endif; ?>
+            <p class="marketing-alert marketing-alert--danger"><?= m_icon('info-circle') ?> Aucun pack disponible. <a href="<?= htmlspecialchars($p('/demo'), ENT_QUOTES, 'UTF-8') ?>">Contactez-nous</a>.</p>
 
+        <?php endif; ?>
 
+    </section>
 
-    <label class="label" for="billing_cycle"><?= m_icon('calendar3') ?> Facturation (packs payants)</label>
+    <section class="marketing-signup-section marketing-signup-section--details">
 
-    <select class="input" id="billing_cycle" name="billing_cycle">
+        <div class="marketing-signup-details">
 
-        <option value="monthly">Mensuelle</option>
+            <div class="marketing-signup-details__col">
 
-        <option value="annual">Annuelle</option>
+                <h2 class="marketing-signup-form__heading"><?= m_icon('building') ?> Votre entreprise</h2>
 
-    </select>
+                <label class="label" for="company_name">Nom de la société</label>
 
+                <input class="input" id="company_name" name="company_name" type="text" required maxlength="255" autocomplete="organization">
 
+            </div>
 
-    <h2 class="marketing-signup-form__heading"><?= m_icon('building') ?> Votre entreprise</h2>
+            <div class="marketing-signup-details__col">
 
-    <label class="label" for="company_name">Nom de la société</label>
+                <h2 class="marketing-signup-form__heading"><?= m_icon('person-badge') ?> Compte administrateur</h2>
 
-    <input class="input" id="company_name" name="company_name" type="text" required maxlength="255" autocomplete="organization">
+                <label class="label" for="full_name">Nom complet</label>
 
+                <input class="input" id="full_name" name="full_name" type="text" maxlength="120" autocomplete="name">
 
+                <label class="label" for="email"><?= m_icon('envelope') ?> Email (identifiant)</label>
 
-    <h2 class="marketing-signup-form__heading"><?= m_icon('person-badge') ?> Compte administrateur</h2>
+                <input class="input" id="email" name="email" type="email" required maxlength="255" autocomplete="email">
 
-    <label class="label" for="full_name">Nom complet</label>
+                <label class="label" for="password"><?= m_icon('lock') ?> Mot de passe</label>
 
-    <input class="input" id="full_name" name="full_name" type="text" maxlength="120" autocomplete="name">
+                <input class="input" id="password" name="password" type="password" required minlength="8" autocomplete="new-password">
 
-    <label class="label" for="email"><?= m_icon('envelope') ?> Email (identifiant)</label>
+                <label class="label" for="password_confirm"><?= m_icon('lock-fill') ?> Confirmer le mot de passe</label>
 
-    <input class="input" id="email" name="email" type="email" required maxlength="255" autocomplete="email">
+                <input class="input" id="password_confirm" name="password_confirm" type="password" required minlength="8" autocomplete="new-password">
 
-    <label class="label" for="password"><?= m_icon('lock') ?> Mot de passe</label>
+            </div>
 
-    <input class="input" id="password" name="password" type="password" required minlength="8" autocomplete="new-password">
+        </div>
 
-    <label class="label" for="password_confirm"><?= m_icon('lock-fill') ?> Confirmer le mot de passe</label>
+        <div class="marketing-signup-submit">
 
-    <input class="input" id="password_confirm" name="password_confirm" type="password" required minlength="8" autocomplete="new-password">
+            <?= m_btn_submit('Créer mon espace', 'rocket-takeoff', 'primary', $packs === []) ?>
 
+            <p class="muted marketing-signup-submit__login">
 
+                <?= m_icon('box-arrow-in-right') ?> Déjà client ? <a href="<?= htmlspecialchars($p('/login'), ENT_QUOTES, 'UTF-8') ?>">Se connecter</a>
 
-    <?= m_btn_submit('Créer mon espace', 'rocket-takeoff', 'primary', $packs === []) ?>
+            </p>
 
-    <p class="muted" style="margin-top:12px;text-align:center;">
+        </div>
 
-        <?= m_icon('box-arrow-in-right') ?> Déjà client ? <a href="<?= htmlspecialchars($p('/login'), ENT_QUOTES, 'UTF-8') ?>">Se connecter</a>
-
-    </p>
+    </section>
 
 </form>
-

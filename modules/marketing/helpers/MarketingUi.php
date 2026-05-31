@@ -22,6 +22,21 @@ final class MarketingUi
         return '<i class="' . $class . '" aria-hidden="true"></i>';
     }
 
+    public static function packIcon(bool $isTrial, int $paidIndex): string
+    {
+        if ($isTrial) {
+            return 'gift';
+        }
+
+        return match ($paidIndex) {
+            0 => 'person-workspace',
+            1 => 'star-fill',
+            2 => 'people-fill',
+            3 => 'building-gear',
+            default => 'trophy-fill',
+        };
+    }
+
     public static function featureIcon(string $slug): string
     {
         return match ($slug) {
